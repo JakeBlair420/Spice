@@ -1,6 +1,6 @@
 #include <dlfcn.h>              // dlsym
-#include <sched.h>              // sched_yield
 #include <stdint.h>
+#include <unistd.h>             // usleep
 #include <mach/mach.h>
 #include "common.h"
 #include "hid.h"
@@ -14,6 +14,10 @@ typedef struct
     mach_msg_max_trailer_t trailer;
 } hid_msg_t;
 
+// XXX: Most of the time, all threads seem to block on some syscall.
+//      This sucks a lot, since that causes execution to be delayed pretty much
+//      indefinitely, which frequently leads to crashing the victim process.
+// TODO Try whether thread_abort helps here.
 static thread_t task_get_thread(task_t task)
 {
     task_t self = mach_task_self();
@@ -54,11 +58,11 @@ static kern_return_t thread_wait(thread_t thread, arm_thread_state64_t *state, m
 
     do
     {
-        sched_yield();
+        usleep(50);
         mach_msg_type_number_t cnt = ARM_THREAD_STATE64_COUNT;
         ASSERT_RET("act_get_state", ret = act_get_state(thread, ARM_THREAD_STATE64, (thread_state_t)state, &cnt));
     } while(state->__pc != pc);
-    ASSERT_RET("thread_resume", ret = thread_resume(thread));
+    ASSERT_RET("thread_suspend", ret = thread_suspend(thread));
 
 out:;
     return ret;
@@ -185,11 +189,10 @@ do \
     mach_port_deallocate(self, bb_thread);
     bb_thread = MACH_PORT_NULL;
 
-
 out:;
     if(MACH_PORT_VALID(bb_thread))
     {
-        ASSERT_RET("thread_go(saved)", thread_go(bb_thread, &saved_state));
+        thread_go(bb_thread, &saved_state);
         mach_port_deallocate(self, bb_thread);
         bb_thread = MACH_PORT_NULL;
     }

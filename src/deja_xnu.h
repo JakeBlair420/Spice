@@ -3,6 +3,6 @@
 
 #include <mach/mach.h>
 
-mach_port_t pwn_backboardd(void);
+mach_port_t deja_xnu(void);
 
 #endif

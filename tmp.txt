@@ -1,0 +1,15 @@
+User    RunAtLoad   Enabled     Entitlement     Path
+mobile  no          yes         yes             /System/Library/CoreServices/AssistiveTouch.app/assistivetouchd
+mobile  yes         yes         no              /System/Library/CoreServices/SpringBoard.app/SpringBoard
+mobile  no          yes         no              /System/Library/CoreServices/VoiceOverTouch.app/vot
+root    no          yes         no              /System/Library/CoreServices/powerd.bundle/powerd
+mobile  no          yes         no              /System/Library/PrivateFrameworks/DragUI.framework/Support/druid
+mobile  no          no          yes             /System/Library/PrivateFrameworks/IAP.framework/Support/iap2d
+mobile  no          yes         yes             /System/Library/PrivateFrameworks/MediaRemote.framework/Support/mediaremoted
+root    yes         yes         no              /usr/libexec/locationd
+mobile  yes         yes         no              /usr/libexec/sharingd
+
+"Undefined kernel instruction: pc=%p instr=%x\\n"
+0xfffffff0075c0038
+
+swapfilename

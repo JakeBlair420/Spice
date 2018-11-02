@@ -47,7 +47,7 @@ $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
 	$(STRIP) $@
 
 $(APP)/Info.plist: $(RES)/Info.plist | $(APP)
-	sed 's/$$(TARGET_GUI)/$(TARGET_GUI)/g;s/$$(PACKAGE)/$(PACKAGE)/g;s/$$(VERSION)/$(VERSION)/g' $(RES)/Info.plist > $@
+	sed 's/$$(TARGET)/$(TARGET_GUI)/g;s/$$(PACKAGE)/$(PACKAGE)/g;s/$$(VERSION)/$(VERSION)/g' $(RES)/Info.plist > $@
 
 $(APP)/Icon-%.png: $(RES)/$(@F) | $(APP)
 	cp $(RES)/$(@F) $@

@@ -38,7 +38,7 @@
 	<true/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>arm64</string>
+		<string>armv7</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

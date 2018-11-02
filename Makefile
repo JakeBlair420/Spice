@@ -1,41 +1,53 @@
-TARGET = Spice
-PACKAGE = lol.spyware.spicy
-VERSION = 1.0.0
+TARGET_GUI       = Spice
+TARGET_CLI       = spice
+PACKAGE          = lol.spyware.spicy
+VERSION          = 1.0.0
 
-BIN = bin
-SRC = src
-RES = res
-APP = $(BIN)/Payload/$(TARGET).app
+BIN              = bin
+RES              = res
+APP              = $(BIN)/Payload/$(TARGET_GUI).app
+SRC_GUI          = src/app
+SRC_CLI          = src/untether
+SRC_ALL          = src/shared
 ifdef RELEASE
-IPA = $(TARGET).ipa
+IPA              = $(TARGET_GUI).ipa
 else
-IPA = $(TARGET)-INTERNAL.ipa
+IPA              = $(TARGET_GUI)-DEV.ipa
 endif
-ICONS := $(wildcard $(RES)/Icon-*.png)
-FILES := $(TARGET) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%)
-IGCC ?= xcrun -sdk iphoneos gcc
-ARCH ?= -arch arm64
-IGCC_FLAGS ?= -Wall -O3 -fmodules -framework IOKit $(CFLAGS)
+UNTETHER         = lib$(TARGET_CLI).dylib
+TRAMP            = trampoline
+ICONS           := $(wildcard $(RES)/Icon-*.png)
+FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%)
+IGCC            ?= xcrun -sdk iphoneos gcc
+ARCH_GUI        ?= -arch arm64
+ARCH_CLI        ?= -arch armv7 -arch arm64
+IGCC_FLAGS      ?= -Wall -O3 -I$(SRC_ALL) -fmodules -framework IOKit $(CFLAGS)
 ifdef RELEASE
-IGCC_FLAGS += -DRELEASE=1
+IGCC_FLAGS      += -DRELEASE=1
 endif
-IBTOOL ?= xcrun -sdk iphoneos ibtool
-IBTOOL_FLAGS ?= --output-format human-readable-text --errors --warnings --notices --target-device iphone --target-device ipad $(IBFLAGS)
-STRIP ?= xcrun -sdk iphoneos strip
+IBTOOL          ?= xcrun -sdk iphoneos ibtool
+IBTOOL_FLAGS    ?= --output-format human-readable-text --errors --warnings --notices --target-device iphone --target-device ipad $(IBFLAGS)
+STRIP           ?= xcrun -sdk iphoneos strip
+SIGN            ?= codesign
+SIGN_FLAGS      ?= -s -
 
-.PHONY: all clean
+.PHONY: all ipa untether clean
 
-all: $(IPA)
+all: $(IPA) $(UNTETHER) $(TRAMP)
+
+ipa: $(IPA)
+
+untether: $(UNTETHER) $(TRAMP)
 
 $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
 
-$(APP)/$(TARGET): $(SRC)/*.m | $(APP)
-	$(IGCC) $(ARCH) -o $@ $(IGCC_FLAGS) $^
+$(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
+	$(IGCC) $(ARCH_GUI) -o $@ $(IGCC_FLAGS) $^
 	$(STRIP) $@
 
 $(APP)/Info.plist: $(RES)/Info.plist | $(APP)
-	sed 's/$$(TARGET)/$(TARGET)/g;s/$$(PACKAGE)/$(PACKAGE)/g;s/$$(VERSION)/$(VERSION)/g' $(RES)/Info.plist > $@
+	sed 's/$$(TARGET_GUI)/$(TARGET_GUI)/g;s/$$(PACKAGE)/$(PACKAGE)/g;s/$$(VERSION)/$(VERSION)/g' $(RES)/Info.plist > $@
 
 $(APP)/Icon-%.png: $(RES)/$(@F) | $(APP)
 	cp $(RES)/$(@F) $@
@@ -46,8 +58,19 @@ $(APP)/Base.lproj/%.storyboardc: $(RES)/%.storyboard | $(APP)/Base.lproj
 $(APP):
 	mkdir -p $@
 
-$(APP)/%.lproj:
+$(APP)/Base.lproj:
 	mkdir -p $@
 
+$(UNTETHER): $(SRC_CLI)/*.m $(SRC_ALL)/*.m
+	$(IGCC) $(ARCH_CLI) -shared -o $@ $(IGCC_FLAGS) $^
+	$(STRIP) -s res/syms.txt $@
+	$(SIGN) $(SIGN_FLAGS) $@
+
+$(TRAMP):
+	$(IGCC) $(ARCH_CLI) -o $@ -L. -l$(TARGET_CLI) $(IGCC_FLAGS) -xc <<<''
+	$(STRIP) $@
+	$(SIGN) $(SIGN_FLAGS) $@
+
 clean:
-	rm -rf $(BIN) *.ipa
+	rm -rf $(BIN)
+	rm -f *.ipa *.dylib $(TRAMP)

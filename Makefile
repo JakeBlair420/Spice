@@ -31,7 +31,7 @@ STRIP           ?= xcrun -sdk iphoneos strip
 SIGN            ?= codesign
 SIGN_FLAGS      ?= -s -
 
-.PHONY: all ipa untether clean
+.PHONY: all ipa untether clean install
 
 all: $(IPA) $(UNTETHER) $(TRAMP)
 
@@ -74,3 +74,24 @@ $(TRAMP):
 clean:
 	rm -rf $(BIN)
 	rm -f *.ipa *.dylib $(TRAMP)
+
+ifndef ID
+install:
+	@echo 'Environment variable ID not set'
+	exit 1
+else
+install: | $(IPA)
+	cp res/*.mobileprovision $(APP)/embedded.mobileprovision
+	echo '<?xml version="1.0" encoding="UTF-8"?>' >tmp.plist
+	echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >>tmp.plist
+	echo '<plist version="1.0">' >>tmp.plist
+	echo '<dict>' >>tmp.plist
+	strings res/*.mobileprovision | egrep -A1 'application-identifier' >>tmp.plist
+	strings res/*.mobileprovision | egrep -A1 'team-identifier' >>tmp.plist
+	echo '</dict>' >>tmp.plist
+	echo '</plist>' >>tmp.plist
+	codesign -f -s '$(ID)' --entitlements tmp.plist $(APP)
+	rm tmp.plist;
+	cd $(BIN) && zip -x .DS_Store -qr9 ../$(IPA) Payload
+	ideviceinstaller -i $(IPA)
+endif

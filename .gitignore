@@ -2,4 +2,6 @@
 /bin
 /*.ipa
 /*.dylib
+/res/*.mobileprovision
+/tmp.plist
 /trampoline

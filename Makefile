@@ -27,7 +27,6 @@ IGCC_FLAGS      += -DRELEASE=1
 endif
 IBTOOL          ?= xcrun -sdk iphoneos ibtool
 IBTOOL_FLAGS    ?= --output-format human-readable-text --errors --warnings --notices --target-device iphone --target-device ipad $(IBFLAGS)
-STRIP           ?= xcrun -sdk iphoneos strip
 SIGN            ?= codesign
 SIGN_FLAGS      ?= -s -
 
@@ -43,8 +42,7 @@ $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
 
 $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
-	$(IGCC) $(ARCH_GUI) -o $@ $(IGCC_FLAGS) $^
-	$(STRIP) $@
+	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^
 
 $(APP)/Info.plist: $(RES)/Info.plist | $(APP)
 	sed 's/$$(TARGET)/$(TARGET_GUI)/g;s/$$(PACKAGE)/$(PACKAGE)/g;s/$$(VERSION)/$(VERSION)/g' $(RES)/Info.plist > $@
@@ -62,13 +60,11 @@ $(APP)/Base.lproj:
 	mkdir -p $@
 
 $(UNTETHER): $(SRC_CLI)/*.m $(SRC_ALL)/*.m
-	$(IGCC) $(ARCH_CLI) -shared -o $@ $(IGCC_FLAGS) $^
-	$(STRIP) -s res/syms.txt $@
+	$(IGCC) $(ARCH_CLI) -shared -o $@ -Wl,-exported_symbols_list,res/untether.txt $(IGCC_FLAGS) $^
 	$(SIGN) $(SIGN_FLAGS) $@
 
 $(TRAMP):
-	$(IGCC) $(ARCH_CLI) -o $@ -L. -l$(TARGET_CLI) $(IGCC_FLAGS) -xc <<<''
-	$(STRIP) $@
+	$(IGCC) $(ARCH_CLI) -o $@ -L. -l$(TARGET_CLI) -Wl,-exported_symbols_list,res/tramp.txt $(IGCC_FLAGS) -xc <<<''
 	$(SIGN) $(SIGN_FLAGS) $@
 
 clean:

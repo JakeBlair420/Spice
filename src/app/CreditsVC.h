@@ -1,6 +1,6 @@
 #import <UIKit/UIKit.h>
 
-@interface PrefVC : UIViewController
+@interface CreditsVC : UIViewController
 
 - (id)init;
 

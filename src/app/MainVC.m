@@ -31,7 +31,8 @@
 
 - (void)actionJailbreak
 {
-    if(!jailbreak())
+    int r = jailbreak(JBOPT_INSTALL_CYDIA | JBOPT_INSTALL_UNTETHER); // TODO: config
+    if(r != 0)
     {
         // TODO: popup
     }

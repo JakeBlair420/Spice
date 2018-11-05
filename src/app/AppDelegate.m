@@ -1,6 +1,6 @@
 #import "AppDelegate.h"
 #import "MainVC.h"
-#import "PrefVC.h"
+#import "CreditsVC.h"
 
 @implementation AppDelegate
 
@@ -8,8 +8,8 @@
 {
     UITabBarController *tab = [[UITabBarController alloc] initWithNibName:nil bundle:nil];
     tab.viewControllers = @[
-        [[MainVC alloc] init],
-        [[PrefVC alloc] init],
+        [[MainVC    alloc] init],
+        [[CreditsVC alloc] init],
     ];
 
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];

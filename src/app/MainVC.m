@@ -6,8 +6,7 @@
 - (id)init
 {
     id ret = [super initWithNibName:nil bundle:nil];
-    self.tabBarItem = [[UITabBarItem alloc] initWithTabBarSystemItem:UITabBarSystemItemFeatured tag:0];
-    self.title = self.tabBarItem.title = @"Noot Noot";
+    self.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Jailbreak" image:nil tag:1];
     return ret;
 }
 
@@ -21,7 +20,9 @@
     [btn setTitle:@"Jailbreak" forState:UIControlStateNormal];
     [btn setTitleColor:[UIColor colorWithHue:0.0 saturation:0.0 brightness:1.0 alpha:1.0] forState:UIControlStateNormal];
     [btn setTitleColor:[UIColor colorWithHue:0.0 saturation:0.0 brightness:0.7 alpha:1.0] forState:UIControlStateHighlighted];
-    btn.titleLabel.font = [UIFont systemFontOfSize:18];
+    [btn setBackgroundColor:[UIColor colorWithRed:1.00 green:0.00 blue:0.00 alpha:1.0]];
+    btn.titleEdgeInsets = UIEdgeInsetsMake(0, 5, 0, 5);
+    btn.titleLabel.font = [UIFont systemFontOfSize:30];
     [btn addTarget:self action:@selector(actionJailbreak) forControlEvents:UIControlEventTouchUpInside];
 
     [self.view addSubview:btn];

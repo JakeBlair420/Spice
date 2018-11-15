@@ -1,8 +1,16 @@
 #include <unistd.h>
 #include "rop.h"
 
+#import <Foundation/Foundation.h>
+
 #ifndef COMMON_H
 #define COMMON_H
+
+#ifdef RELEASE
+#   define LOG(str, args...) do { } while(0)
+#else
+#   define LOG(str, args...) do { NSLog(@ str "\n", ##args); } while(0)
+#endif
 
 struct offset_struct {
 	int dns4_array_to_lcconf;

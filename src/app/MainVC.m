@@ -1,10 +1,14 @@
 #import "MainVC.h"
+
+#include "common.h"
 #include "jailbreak.h"
 
 @implementation MainVC
 
 - (id)init
 {
+    LOG("pullup");
+
     id ret = [super initWithNibName:nil bundle:nil];
     self.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Jailbreak" image:nil tag:1];
     return ret;

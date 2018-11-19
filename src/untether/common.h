@@ -29,6 +29,7 @@ struct offset_struct {
 	uint64_t str_x0_gadget_offset;
 	uint64_t cbz_x0_gadget;
 	uint64_t cbz_x0_x16_load; // offset which needs to be overwritten to make the cbz gadget work
+	uint64_t add_x0_gadget;
 	uint64_t rop_nop;
 	uint64_t longjmp;
 	uint64_t stack_pivot;

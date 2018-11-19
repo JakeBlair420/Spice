@@ -52,6 +52,7 @@ struct offset_struct {
 	uint64_t stage2_size; // size of stage 2 (also needed for stage 1)
 	uint64_t stage3_base; // address where stage 3 gets mapped
 	uint64_t stage3_size; // size of stage 3
+	uint64_t stage3_max_size; // maximum size of stage 3
 	void * stage3_databuffer; 
 	uint64_t stage3_databuffer_len; // size of the stage 3 data buffer
 	

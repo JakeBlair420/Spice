@@ -10,6 +10,7 @@ enum ropgadget_types {
 	OFFSET,
 	NONE,
 	BUF,
+	BARRIER,
 	ROP_VAR,
 	ROP_LOOP_START,
 	ROP_LOOP_END,
@@ -65,6 +66,11 @@ typedef struct rop_var rop_var_t;
 	curr_gadget->comment = malloc(sizeof(struct rop_gadget_comment)); \
 	curr_gadget->comment->line = __LINE__; \
 	curr_gadget->comment->comment = strdup(mycomment);
+
+#define ADD_BARRIER(addr) \
+	ADD_GADGET(); \
+	curr_gadget->type = BARRIER; \
+	curr_gadget->value = addr;
 
 #define ADD_LOOP_START(name) \
 	ADD_GADGET(); \

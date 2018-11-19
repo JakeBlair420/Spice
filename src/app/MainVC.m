@@ -1,7 +1,7 @@
-#import "MainVC.h"
+#include <shared/common.h>
+#include <shared/jailbreak.h>
 
-#include "common.h"
-#include "jailbreak.h"
+#import "MainVC.h"
 
 @implementation MainVC
 

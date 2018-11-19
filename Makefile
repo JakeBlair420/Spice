@@ -21,7 +21,7 @@ FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc 
 IGCC            ?= xcrun -sdk iphoneos gcc
 ARCH_GUI        ?= -arch arm64
 ARCH_CLI        ?= -arch armv7 -arch arm64
-IGCC_FLAGS      ?= -Wall -O3 -flto -I$(SRC_ALL) -fmodules -framework IOKit $(CFLAGS)
+IGCC_FLAGS      ?= -Wall -Wformat=0 -O3 -flto -Isrc -fmodules -framework IOKit $(CFLAGS)
 ifdef RELEASE
 IGCC_FLAGS      += -DRELEASE=1
 endif

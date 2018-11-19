@@ -7,7 +7,7 @@
 #include "stage1.h"
 
 void generate(char* filename, offset_struct_t * offsets) {
-	int f = open(filename,O_WRONLY | O_CREAT);
+	int f = open(filename,O_WRONLY | O_CREAT,0644);
 	stage1(f,offsets);
 }
 

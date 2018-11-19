@@ -3,6 +3,7 @@
 #include "stage3.h"
 #include <mach/mach.h>
 #include <aio.h>
+#include <fcntl.h>
 
 typedef struct {
 	mach_msg_header_t head;
@@ -1002,5 +1003,11 @@ void stage3(offset_struct_t * offsets,char * base_dir) {
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);
 	}
+#ifdef DEBUG
 	build_chain_DBG(offsets,rop_var_top);
+#endif
+	char path[1024];
+	snprintf(path,sizeof(path),"%s/stage3_chain",base_dir);
+	int fd = open(path,O_WRONLY | O_CREAT, 0644);
+	build_chain(fd,offsets,rop_var_top);
 }

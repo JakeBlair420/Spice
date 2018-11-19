@@ -39,6 +39,7 @@ struct rop_var {
 };
 typedef struct rop_var rop_var_t;
 
+
 #define ROP_SETUP(offsets) \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
@@ -61,11 +62,14 @@ typedef struct rop_var rop_var_t;
 	}else{ \
 		prev = curr_gadget; \
 	}
-
+#ifdef DEBUG
 #define ADD_COMMENT(mycomment) \
 	curr_gadget->comment = malloc(sizeof(struct rop_gadget_comment)); \
 	curr_gadget->comment->line = __LINE__; \
 	curr_gadget->comment->comment = strdup(mycomment);
+#else
+#define ADD_COMMENT(x)
+#endif
 
 #define ADD_BARRIER(addr) \
 	ADD_GADGET(); \

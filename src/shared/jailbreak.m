@@ -388,6 +388,40 @@ kern_return_t jailbreak(uint32_t opt)
         }
     }
 
+    {
+        // start launchdaemons
+        ret = execprog("/bees/launchctl", (const char **)&(const char *[])
+                        {
+                            "/bees/launchctl",
+                            "load",
+                            "-w",
+                            "/Library/LaunchDaemons",
+                            NULL
+                        });
+        if (ret != 0)
+        {
+            printf("failed to start launchdaemons: %d\n", ret);
+        }
+
+        // run rc.d scripts
+        if (access("/etc/rc.d", F_OK) == 0)
+        {
+            // "No reason not to use it until it's removed" - sbingner, 12-11-2018
+            typedef int (*system_t)(const char *command);
+            system_t sys = dlsym(RTLD_DEFAULT, "system");
+            
+            NSArray *files = [fileMgr contentsOfDirectoryAtPath:@"/etc/rc.d" error:nil];
+            
+            for (id file in files)
+            {
+                NSString *fullPath = [NSString stringWithFormat:@"/etc/rc.d/%@", file];
+                
+                ret = sys([fullPath UTF8String]);
+                printf("ret on %s: %d\n", [fullPath UTF8String], ret);
+            }
+        }
+    }
+
     if(opt & JBOPT_INSTALL_CYDIA)
     {
         // TODO: install Cydia.deb via dpkg 

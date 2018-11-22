@@ -3,6 +3,7 @@
 #include <mach/mach.h>
 
 extern int syscall(int, ...);
+extern kern_return_t mach_vm_map(vm_map_t, mach_vm_address_t*, mach_vm_size_t, mach_vm_offset_t, int, mem_entry_name_port_t, memory_object_offset_t, boolean_t, vm_prot_t, vm_prot_t, vm_inherit_t);
 
 #ifdef __x86_64__
 #   define REMAP_ADDR 0x110000000
@@ -11,9 +12,9 @@ extern int syscall(int, ...);
 #   define END_ADDR   0x2fc2211c    /* cache offset of __exit() */
 #elif defined(__arm64__)
 #   define REMAP_ADDR 0x101000000
-#   define REMAP_SIZE bitch what do I know /* __TEXT segment only */
-#   define JUMP_ADDR  0xwhatever
-#   define END_ADDR   0xyolo
+#   define REMAP_SIZE 0x1e8a0000    /* __TEXT segment only */
+#   define JUMP_ADDR  0x624c9c      /* cache offset of write() */
+#   define END_ADDR   0x6268e0      /* cache offset of __exit() */
 #else
 #   error fuck is a blob
 #endif

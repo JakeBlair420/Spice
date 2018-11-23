@@ -29,6 +29,10 @@ struct offset_struct {
 	uint64_t pivot_x21; // the x21 gadget (see rop.h)
 	uint64_t memmove; // address of the memmove pointer we smash in the dyld cache data
 	uint64_t lcconf_counter_offset; // offset of counter in the lcconf struct
+	// stage 2 vars
+	uint64_t cache_text_seg_size; // size of the dyld cache text segment
+	uint64_t cache_text_seg_offset; // offset of the text segment in the cache
+	uint64_t new_cache_addr; // the new text address of the cache
 	// framework (stage 2/3)
 	uint64_t BEAST_GADGET; // siguzas gadget (see rop.h)
 	uint64_t BEAST_GADGET_LOADER; // everything after the blr
@@ -45,6 +49,8 @@ struct offset_struct {
 	uint64_t open; // open func
 	uint64_t mmap; // mmap func
 	uint64_t memcpy; // memcpy func
+	uint64_t mach_vm_memory_entry_64;
+	uint64_t mach_vm_map;
 	// kernel
 	uint64_t ipr_size; // ipr_size offset
 	uint64_t trust_chain_head_ptr;
@@ -55,6 +61,7 @@ struct offset_struct {
 	uint64_t is_task;
 	// internal
 	rop_gadget_t * stage1_ropchain; 
+	rop_gadget_t * stage2_ropchain;
 	rop_gadget_t * stage3_ropchain;
 	uint64_t stage2_base; // address where stage 2 gets mapped
 	uint64_t stage2_size; // size of stage 2 (also needed for stage 1)

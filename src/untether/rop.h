@@ -40,14 +40,14 @@ struct rop_var {
 typedef struct rop_var rop_var_t;
 
 
-#define ROP_SETUP(offsets) \
+#define ROP_SETUP(rop_chain_head) \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
 	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
 	curr_gadget->comment = NULL; \
-	(offsets)->stage1_ropchain = curr_gadget; \
+	(rop_chain_head) = curr_gadget; \
 	int ropchain_len = 0; 
 
 #define ADD_GADGET() \

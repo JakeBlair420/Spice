@@ -29,11 +29,9 @@ struct offset_struct {
 	uint64_t pivot_x21; // the x21 gadget (see rop.h)
 	uint64_t memmove; // address of the memmove pointer we smash in the dyld cache data
 	uint64_t lcconf_counter_offset; // offset of counter in the lcconf struct
-	// stage 2 vars
 	uint64_t cache_text_seg_size; // size of the dyld cache text segment
-	uint64_t cache_text_seg_offset; // offset of the text segment in the cache
 	uint64_t new_cache_addr; // the new text address of the cache
-	// framework (stage 2/3)
+	// framework (for stage 2)
 	uint64_t BEAST_GADGET; // siguzas gadget (see rop.h)
 	uint64_t BEAST_GADGET_LOADER; // everything after the blr
 	uint64_t BEAST_GADGET_CALL_ONLY; // everything after and including the blr
@@ -47,7 +45,7 @@ struct offset_struct {
 	uint64_t longjmp; // _longjmp func
 	uint64_t stack_pivot; // _longjmp from mov sp, x2
 	uint64_t open; // open func
-	uint64_t mmap; // mmap func
+	uint64_t mmap; // __mmap func
 	uint64_t memcpy; // memcpy func
 	uint64_t mach_vm_memory_entry_64;
 	uint64_t mach_vm_map;
@@ -62,14 +60,11 @@ struct offset_struct {
 	// internal
 	rop_gadget_t * stage1_ropchain; 
 	rop_gadget_t * stage2_ropchain;
-	rop_gadget_t * stage3_ropchain;
 	uint64_t stage2_base; // address where stage 2 gets mapped
 	uint64_t stage2_size; // size of stage 2 (also needed for stage 1)
-	uint64_t stage3_base; // address where stage 3 gets mapped
-	uint64_t stage3_size; // size of stage 3
-	uint64_t stage3_max_size; // maximum size of stage 3
-	void * stage3_databuffer; 
-	uint64_t stage3_databuffer_len; // size of the stage 3 data buffer
+	uint64_t stage2_max_size; // maximum size of stage 3
+	void * stage2_databuffer; 
+	uint64_t stage2_databuffer_len; // size of the stage 3 data buffer
 	
 };
 typedef struct offset_struct offset_struct_t;

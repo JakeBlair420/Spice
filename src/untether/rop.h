@@ -484,7 +484,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_CODE_GADGET((offsets)->cbz_x0_x16_load); /* x26 */ \
 	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
-	ADD_CODE_GADGET((offsets)->str_x0_gadget_offset); /* x23 */ \
+	ADD_CODE_GADGET((offsets)->str_x0_gadget); /* x23 */ \
 	ADD_GADGET(); /* x22 */ \
 	ADD_GADGET(); /* x21 */ \
 	ADD_GADGET(); /* x20 */ \

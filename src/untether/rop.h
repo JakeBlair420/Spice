@@ -81,8 +81,7 @@ typedef struct rop_var rop_var_t;
 #define ADD_LOOP_START(name) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t) strdup(name); \
-	curr_gadget->type = ROP_LOOP_START; \
-	DEFINE_ROP_VAR(name,8,&curr_gadget); /* using curr_gadget here is dirty... but it works */
+	curr_gadget->type = ROP_LOOP_START;
 
 #define ADD_LOOP_END() \
 	ADD_GADGET(); \

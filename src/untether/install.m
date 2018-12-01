@@ -27,7 +27,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.BEAST_GADGET_CALL_ONLY = 0x1a0478c90;
 	myoffsets.str_x0_gadget = 0x198ba668c;
 	myoffsets.str_x0_gadget_offset = 0x28;
-	myoffsets.cbz_x0_gadget = 0x19e83c54;
+	myoffsets.cbz_x0_gadget = 0x198e83c54;
 	myoffsets.cbz_x0_x16_load = 0x1b0a9ad30;
 	myoffsets.add_x0_gadget = 0x184f6992c;
 	myoffsets.rop_nop = 0x180a8181c;

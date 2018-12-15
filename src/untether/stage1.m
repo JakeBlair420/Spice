@@ -193,7 +193,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 		}ints;
 	};
 	union path_union path;
-	snprintf(&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
+	snprintf((char*)&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
 	//snprintf(&path.path,62,"/private/etc/racoon/cache");
 	
 

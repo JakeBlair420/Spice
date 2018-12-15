@@ -94,12 +94,12 @@ typedef struct rop_var rop_var_t;
 
 #define ADD_CODE_GADGET(addr) \
 	ADD_GADGET(); \
-	curr_gadget->value = addr; \
+	curr_gadget->value = (uint64_t)addr; \
 	curr_gadget->type = CODEADDR;
 
 #define ADD_STATIC_GADGET(val) \
 	ADD_GADGET(); \
-	curr_gadget->value = val; \
+	curr_gadget->value = (uint64_t) val; \
 	curr_gadget->type = STATIC;
 
 #define ADD_OFFSET_GADGET(val) \

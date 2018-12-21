@@ -35,6 +35,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.cache_text_seg_size = 0x30000000;
 	myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
 	myoffsets.stage2_max_size = 0x100000;
+	myoffsets.thread_max_size = 0x10000;
 	// TODO: add kernel offsets
 
 	// generate stage 2 before stage 1 cause stage 1 needs to know the size of it

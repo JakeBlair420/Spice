@@ -60,9 +60,10 @@ struct offset_struct {
 	rop_gadget_t * stage2_ropchain;
 	uint64_t stage2_base; // address where stage 2 gets mapped
 	uint64_t stage2_size; // size of stage 2 (also needed for stage 1)
-	uint64_t stage2_max_size; // maximum size of stage 3
+	uint64_t stage2_max_size; // maximum size of stage 2
+	uint64_t thread_max_size; // maximum size of one of the threads in stage 2
 	void * stage2_databuffer; 
-	uint64_t stage2_databuffer_len; // size of the stage 3 data buffer
+	uint64_t stage2_databuffer_len; // size of the stage 2 data buffer
 	
 };
 typedef struct offset_struct offset_struct_t;

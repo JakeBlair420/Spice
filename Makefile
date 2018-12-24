@@ -17,7 +17,7 @@ endif
 UNTETHER         = lib$(TARGET_CLI).dylib
 TRAMP            = trampoline
 ICONS           := $(wildcard $(RES)/Icon-*.png)
-FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%)
+FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) amfid_payload.dylib 
 IGCC            ?= xcrun -sdk iphoneos gcc
 ARCH_GUI        ?= -arch arm64
 ARCH_CLI        ?= -arch armv7 -arch arm64
@@ -40,6 +40,14 @@ untether: $(UNTETHER) $(TRAMP)
 
 $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
+
+$(APP)/amfid_payload.dylib: module/libamfun
+	echo Making project $^
+	make -C $^
+	echo Copying file to $@
+	cp $^/bin/amfid_payload.dylib $@
+
+# $(APP)/amfid_payload.dylib | $(RES)/amfid_payload.dylib:
 
 $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
 	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^
@@ -87,7 +95,7 @@ install: | $(IPA)
 	echo '</dict>' >>tmp.plist
 	echo '</plist>' >>tmp.plist
 	codesign -f -s '$(ID)' --entitlements tmp.plist $(APP)
-	rm tmp.plist;
+	rm tmp.plist
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$(IPA) Payload
 	ideviceinstaller -i $(IPA)
 endif

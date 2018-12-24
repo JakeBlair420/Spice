@@ -246,6 +246,9 @@ kern_return_t jailbreak(uint32_t opt)
     {
         // TODO: sumoduling of jailbreak bianries (amfid_payload et. al.)
 
+        // TODO: ifdef for app only 
+        COPY_RESOURCE("amfid_payload.dylib", "/bees/amfid_payload.dylib");
+
         if (access("/bees/amfid_payload.dylib", F_OK) != 0)
         {
             LOG("failed to find amfid_payload.dylib!");

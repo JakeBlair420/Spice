@@ -1,0 +1,4 @@
+[submodule "module/libamfun"]
+	path = module/libamfun
+	url = https://forge.siguza.net/PsychoTea/libamfun.git
+	branch = master

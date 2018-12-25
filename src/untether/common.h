@@ -53,6 +53,7 @@ struct offset_struct {
 	uint64_t copyin;
 	uint64_t gadget_add_x0_x0_ret;
 	uint64_t rootdomainUC_vtab;
+	uint64_t swapprefix_addr;
 	uint64_t itk_registered;
 	uint64_t is_task;
 	// internal
@@ -64,7 +65,10 @@ struct offset_struct {
 	uint64_t thread_max_size; // maximum size of one of the threads in stage 2
 	void * stage2_databuffer; 
 	uint64_t stage2_databuffer_len; // size of the stage 2 data buffer
-	
+	uint64_t stage3_jumpaddr; // jump address for the dylib
+	uint64_t stage3_fileoffset; // file offset in the dylib
+	uint64_t stage3_size; // file size of the dylib	
+	uint64_t stage3_loadaddr; // load address for the dylib in the racoon process
 };
 typedef struct offset_struct offset_struct_t;
 

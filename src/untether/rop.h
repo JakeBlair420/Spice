@@ -42,6 +42,7 @@ struct rop_var {
 typedef struct rop_var rop_var_t;
 
 
+// TODO: explain what all of that does in greater detail
 #define ROP_SETUP(rop_chain_head) \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \

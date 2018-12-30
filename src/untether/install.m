@@ -40,7 +40,8 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.rootdomainUC_vtab = 0xfffffff00708d870;
 	myoffsets.itk_registered = 0x2f0;
 	myoffsets.is_task = 0x28;
-	myoffsets.copyin = 0xfffffff0071a05bc;
+	myoffsets.copyin = 0xfffffff0071a05ac;
+	myoffsets.gadget_add_x0_x0_ret = 0xfffffff0073b71e4;
 	myoffsets.swapprefix_addr = 0xfffffff0075898bc;
 	myoffsets.trust_chain_head_ptr = 0xfffffff007687428;
 	myoffsets.stage3_fileoffset = 0;

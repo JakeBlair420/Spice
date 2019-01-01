@@ -46,7 +46,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.trust_chain_head_ptr = 0xfffffff007687428;
 	myoffsets.stage3_fileoffset = 0;
 	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
-	myoffsets.stage3_size = 0xd000;
+	myoffsets.stage3_size = 0x10000;
 	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x7fa8;
 
 	// generate stage 2 before stage 1 cause stage 1 needs to know the size of it

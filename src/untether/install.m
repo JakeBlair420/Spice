@@ -30,9 +30,11 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.cbz_x0_gadget = 0x198e83c54;
 	myoffsets.cbz_x0_x16_load = 0x1b0a9ad30;
 	myoffsets.add_x0_gadget = 0x184f6992c;
+	myoffsets.fcntl_raw_syscall = 0x180978490;
 	myoffsets.rop_nop = 0x180a8181c;
 	myoffsets.new_cache_addr = 0x1c0000000;
 	myoffsets.cache_text_seg_size = 0x30000000;
+	myoffsets.errno_offset = 0x1f167dfe0;
 	myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
 	myoffsets.stage2_max_size = 0x200000;
 	myoffsets.thread_max_size = 0x10000;

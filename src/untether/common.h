@@ -41,12 +41,14 @@ struct offset_struct {
 	uint64_t cbz_x0_x16_load; // offset which needs to be overwritten to make the cbz gadget work
 	uint64_t add_x0_gadget; // see rop.h
 	uint64_t rop_nop; // simple ret
+	uint64_t errno_offset; // the offset where the c_nocancel stub will write to
 	// userland functions
 	uint64_t longjmp; // _longjmp func
 	uint64_t stack_pivot; // _longjmp from mov sp, x2
 	uint64_t open; // open func
 	uint64_t mmap; // __mmap func
 	uint64_t memcpy; // memcpy func
+	uint64_t fcntl_raw_syscall; // the raw syscall stub of fcntl
 	// kernel
 	uint64_t ipr_size; // ipr_size offset
 	uint64_t trust_chain_head_ptr;

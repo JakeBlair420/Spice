@@ -10,39 +10,6 @@
 
 #include "pwn.h"
 
-/*  god forbid this ever changes  */
-// #define KERNEL_IMAGE_BASE               0xfffffff007004000
-
-// /*  function offsets  */
-// #define COPYIN                          0xfffffff00719e88c // To find: `nm kernel | grep _copyin`
-// #define COPYOUT                         0xfffffff00719eab0 // To find: `nm kernel | grep _copyout`
-// // #define PROC_FIND                       0xfffffff0073ed31c // To find: `nm kernel | grep _proc_find`
-// #define KERNEL_TASK                     0xfffffff0075d1048 // To find: `nm kernel | grep _kernel_task`
-// #define CURRENT_TASK                    0xfffffff0070e8c0c // To find: `nm kernel | grep _current_task`
-// #define HOST_PRIV_SELF                  0xfffffff0070c292c // To find: `nm kernel | grep _host_priv_self`
-// #define GET_BSDTASK_INFO                0xfffffff0070fe7ec // To find: `nm kernel | grep _get_bsdtask_info`
-// #define VM_MAP_WIRE_EXTERNAL            0xfffffff007148fe8 // To find: `nm kernel | grep _vm_map_wire_external`
-// #define IOSURFACE_ROOTUC_VTAB_ADDR      0xfffffff006e73590 // To find: `iometa -Csv IOSurfaceRootUserClient kernel` (vtab=...)
-// #define ADD_X0_X0_RET_GADGET            0xfffffff0063fddbc // To find (in r2): `"/c add x0, x0, 0x40; ret"`
-
-// #define IPC_PORT_ALLOC_SPECIAL          0xfffffff0070ad1a8 // To find: strref "ipc_host_init" -> first call above
-// #define IPC_KOBJECT_SET                 0xfffffff0070c3148 // To find: strref "ipc_host_init" -> first call below, after panic
-// #define IPC_PORT_MAKE_SEND              0xfffffff0070ac924 // To find: strref "ipc_host_init" -> second call below, after panic
-
-// #define ZONE_MAP                        0xfffffff0075f3e50 // To find: strref "zone_init" -> first qword just, below _kernel_map usage
-
-// /*  struct offsets/sizes  */
-// #define IS_TASK_OFFSET          0x28
-// #define TASK_ITK_SELF           0xd8
-// #define ITK_REGISTERED_OFFSET   0x2f0
-// #define IPR_SIZE_OFFSET         0x8
-// #define SIZEOF_TASK             0x5c8 // To find: streref "tasks" -> mov xx, #offset; should be in 0x550-0x600 range
-
-// /*  IOSurface shenanigans  */
-// #define IOSURFACE_CREATE_OUTSIZE    0xbc8
-// #define IOSURFACE_CREATE_SURFACE    0
-// #define IOSURFACE_SET_VALUE         9
-
 /*  Mach spelunking  */
 #define IO_BITS_ACTIVE      0x80000000
 #define IOT_PORT            0

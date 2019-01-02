@@ -74,7 +74,7 @@ offsets_t offs = (offsets_t){
         .is_task_offset = 0x28,
         .task_itk_self = 0xd8,
         .itk_registered = 0x2f0,
-        .ipr_size = 0x8, // should just be sizeof(kptr_t) ? 
+        .ipr_size = 0x8, // ipc_port_request->name->size
         .sizeof_task = 0x5c8,
     },
     .iosurface = {

@@ -6,8 +6,7 @@
 
 #include "common.h"
 
-// #define KDATA_SIZE 0x400
-#define KDATA_SIZE 0x1080
+#define KDATA_SIZE 0x400
 
 kptr_t kdata_init(void);
 kern_return_t kdata_write(const void *data);

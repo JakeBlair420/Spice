@@ -8,8 +8,6 @@
 
 #include "kdata.h"
 
-#define KDATA_SIZE 0x400
-
 static kptr_t kdata_addr = 0;
 static thread_t kdata_worker = MACH_PORT_NULL;
 static mach_vm_address_t kdata_shm = 0;
@@ -28,6 +26,7 @@ kptr_t kdata_init(void)
     {
         mach_vm_address_t addr = 0;
         ASSERT_RET(out, "mach_vm_allocate", mach_vm_allocate(mach_task_self(), &addr, KDATA_SIZE, VM_FLAGS_ANYWHERE));
+        bzero((void *)addr, KDATA_SIZE);
         int r = mlock((void*)addr, KDATA_SIZE);
         LOG("mlock: %u", r);
         if(r != 0) goto out;
@@ -37,15 +36,11 @@ out:;
     return kdata_addr;
 }
 
-kern_return_t kdata_write(const void *data, size_t len)
+kern_return_t kdata_write(const void *data)
 {
-    if(len > KDATA_SIZE)
-    {
-        return KERN_RESOURCE_SHORTAGE;
-    }
     if(MACH_PORT_VALID(kdata_worker)) // SMAP devices
     {
-        bcopy(data, (void*)kdata_shm, len);
+        bcopy(data, (void*)kdata_shm, KDATA_SIZE);
         kern_return_t ret = KERN_FAILURE;
         // TODO: call worker
         ret = KERN_SUCCESS;
@@ -54,7 +49,25 @@ kern_return_t kdata_write(const void *data, size_t len)
     }
     else // Non-SMAP devices
     {
-        bcopy(data, (void*)kdata_addr, len);
+        bcopy(data, (void*)kdata_addr, KDATA_SIZE);
+        return KERN_SUCCESS;
+    }
+}
+
+kern_return_t kdata_read(void *buffer)
+{
+    if (MACH_PORT_VALID(kdata_worker)) // SMAP devices
+    {
+        kern_return_t ret = KERN_FAILURE;
+        // TODO: call worker
+        ret = KERN_SUCCESS;
+        bcopy((void *)kdata_shm, buffer, KDATA_SIZE);
+    out:;
+        return ret;
+    }
+    else // Non-SMAP devices 
+    {
+        bcopy((void *)kdata_addr, buffer, KDATA_SIZE);
         return KERN_SUCCESS;
     }
 }

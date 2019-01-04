@@ -1,7 +1,7 @@
 .DS_Store
 /bin
 /*.ipa
-/*.dylib
+/res/*.dylib
 /res/*.mobileprovision
 /tmp.plist
 /trampoline

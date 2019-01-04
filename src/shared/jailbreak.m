@@ -192,7 +192,7 @@ kern_return_t jailbreak(uint32_t opt)
         // note: this offset is pretty much the t_flags offset +0x8
         uint64_t kernel_task_addr = rk64(offs.data.kernel_task + kernel_slide);
         wk64(kernel_task_addr + 0x3a8, kbase);  // task->all_image_info_addr
-        wk64(kernel_task_addr + 0x3B0, kernel_slide); // task->all_image_info_size
+        wk64(kernel_task_addr + 0x3b0, kernel_slide); // task->all_image_info_size
     
         struct task_dyld_info dyld_info = {0};
         mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
@@ -222,7 +222,7 @@ kern_return_t jailbreak(uint32_t opt)
     int len = 4096;
     char *bundle_path = malloc(len);
     CFURLGetFileSystemRepresentation(resourcesUrl, TRUE, (UInt8 *)bundle_path, len);
-    printf("bundle path: %s\n", bundle_path);
+    LOG("bundle path: %s", bundle_path);
     
     #define COPY_RESOURCE(name, to_path)\
     do\
@@ -234,164 +234,73 @@ kern_return_t jailbreak(uint32_t opt)
     }\
     while (0)
 
-    // MACH(mkdir("/spice"));
+    // MACH(mkdir("/jb"));
 
-    // if (access("/spice", F_OK) != 0)
+    // if (access("/jb", F_OK) != 0)
     // {
-    //     LOG("failed to create /spice directory!");
+    //     LOG("failed to create /jb directory!");
     //     ret = KERN_FAILURE;
     //     goto out;
     // }
 
     {
-        // TODO: sumoduling of jailbreak bianries (amfid_payload et. al.)
-
-        // TODO: ifdef for app only 
-        COPY_RESOURCE("amfid_payload.dylib", "/bees/amfid_payload.dylib");
-
-        if (access("/bees/amfid_payload.dylib", F_OK) != 0)
-        {
-            LOG("failed to find amfid_payload.dylib!");
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        MACH(inject_trust("/bees/amfid_payload.dylib"));
-
-        int amfid_pid = get_pid_for_name("amfid");
-        VAL_CHECK(amfid_pid);
-
-        LOG("amfid pid is: %d", amfid_pid);
-        
-        uint64_t osbool_val = rk64(offs.data.osboolean_true + kernel_slide);
-        VAL_CHECK(osbool_val);
-
-        // uint64_t amfid_proc = find_proc(amfid_pid);
-        // VAL_CHECK(amfid_proc);
-
-        uint64_t our_ucred = rk64(myproc + 0x100);
-        VAL_CHECK(our_ucred);
-
-        uint64_t our_cr_label = rk64(our_ucred + 0x78); 
-        VAL_CHECK(our_cr_label);
-
-        uint64_t our_ents = rk64(our_cr_label + 0x8);
-        VAL_CHECK(our_ents);
-
-        uint64_t OSDictionary_vtab = rk64(our_ents);
-        VAL_CHECK(OSDictionary_vtab);
-
-        // OSDictionary::SetObject = vtable->0xf8
-        uint64_t OSDictionary_SetItem = rk64(OSDictionary_vtab + 0xf8);
-        VAL_CHECK(OSDictionary_SetItem);
-
-        const char *str_to_patch = "task_for_pid-allow";
-        int str_len = strlen(str_to_patch) + 1;
-        uint64_t str_alloc = kalloc(str_len);
-        kwrite(str_alloc, (void *)str_to_patch, str_len);
-        LOG("str_alloc: %llx", str_alloc);
-
-        // kexecute automatically adds kernel_slide, however this vtab entry is already slid 
-        LOG("OSDict::SetItem return: %llx", kexecute(OSDictionary_SetItem - kernel_slide, 3, our_ents, str_alloc, osbool_val));
-
-        kfree(str_alloc, str_len);
-
-        mach_port_t amfid_task = MACH_PORT_NULL;
-        MACH(task_for_pid(mach_task_self(), amfid_pid, &amfid_task));
-
-        unlink("/var/tmp/amfid.alive");
-
-        uint64_t dlopen_ret = call_remote(amfid_task, dlopen, 2, REMOTE_CSTRING("/bees/amfid_payload.dylib"), REMOTE_LITERAL(RTLD_NOW));
-        LOG("dlopen returned: %llx", dlopen_ret);
-
-        const int max_tries = 100;
-        int tries = 0;
-        while (access("/var/tmp/amfid.alive", F_OK) != 0 && tries < max_tries)
-        {
-            LOG("waiting for amfid...");
-            usleep(100000); // 0.1 sec
-            tries++;
-        }
-    
-        wk64(mytask + offs.struct_offsets.itk_registered, 0x0); // null out the port
-
-        if (tries >= max_tries)
-        {
-            LOG("failed to patch amfid (%d tries)", tries);
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        LOG("---> amfid has been pwned");
-
-        ret = execprog("/bees/hello", NULL);
-        VAL_CHECK(ret == 0);
-    }
-
-    {
         // TODO: bootstrapping
     }
 
+    if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
     {
-        // TODO: copy/check for launchctl
+        unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+    }
 
-        MACH(inject_trust("/bees/launchctl"));
+    COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/");
+    LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
 
+    {
         // TODO: copy/check for libjailbreak
-        chmod("/usr/lib/libjailbreak.dylib", 0755);
+        // chmod("/usr/lib/libjailbreak.dylib", 0755);
 
         // TODO: copy/check for jailbreakd 
 
         unlink("/var/tmp/jailbreakd.pid");
 
-        NSData *blob = [NSData dataWithContentsOfFile:@"/bees/jailbreakd.plist"];
+        NSData *blob = [NSData dataWithContentsOfFile:@"/bees/offsets.plist"];
         if (blob == NULL)
         {
-            LOG("failed to open jailbreakd.plist");
+            LOG("failed to open offsets.plist");
             ret = KERN_FAILURE;
             goto out;
         }
 
         NSMutableDictionary *dict = [NSPropertyListSerialization propertyListWithData:blob options:NSPropertyListMutableContainers format:nil error:nil];
         
-        dict[@"EnvironmentVariables"][@"KernProcAddr"]       = [NSString stringWithFormat:@"0x%016llx", offs.data.kern_proc + kernel_slide];
-        dict[@"EnvironmentVariables"][@"ZoneMapOffset"]      = [NSString stringWithFormat:@"0x%016llx", offs.data.zone_map + kernel_slide];
-        dict[@"EnvironmentVariables"][@"AddRetGadget"]       = [NSString stringWithFormat:@"0x%016llx", offs.gadgets.add_x0_x0_ret + kernel_slide];
-        dict[@"EnvironmentVariables"][@"OSBooleanTrue"]      = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + kernel_slide))];
-        dict[@"EnvironmentVariables"][@"OSBooleanFalse"]     = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + 0x8 + kernel_slide))];
-        dict[@"EnvironmentVariables"][@"OSUnserializeXML"]   = [NSString stringWithFormat:@"0x%016llx", offs.funcs.osunserializexml + kernel_slide];
-//        dict[@"EnvironmentVariables"][@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", find_smalloc()];
-        [dict writeToFile:@"/bees/jailbreakd.plist" atomically:YES];
+        dict[@"AddRetGadget"]       = [NSString stringWithFormat:@"0x%016llx", offs.gadgets.add_x0_x0_ret + kernel_slide];
+        dict[@"KernProc"]           = [NSString stringWithFormat:@"0x%016llx", offs.data.kern_proc + kernel_slide];
+        dict[@"OSBooleanTrue"]      = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + kernel_slide))];
+        dict[@"OSBooleanFalse"]     = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + 0x8 + kernel_slide))];
+        dict[@"OSUnserializeXML"]   = [NSString stringWithFormat:@"0x%016llx", offs.funcs.osunserializexml + kernel_slide];
+        dict[@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", 0xFFFFFFF006822CB0 + kernel_slide];
+        dict[@"ZoneMapOffset"]      = [NSString stringWithFormat:@"0x%016llx", offs.data.zone_map + kernel_slide];
+        [dict writeToFile:@"/bees/offsets.plist" atomically:YES];
+        LOG("wrote offsets.plist");
         
-        chown("/bees/jailbreakd.plist", 0, 0);
-        chmod("/bees/jailbreakd.plist", 0600);
-        
-        ret = execprog("/bees/launchctl", (const char **)&(const char *[])
+        chown("/bees/offsets.plist", 0, 0);
+        chmod("/bees/offsets.plist", 0644);
+    }
+
+    {
+        if (access("/usr/libexec/substrate", F_OK) == 0)
         {
-            "/bees/launchctl",
-            "load",
-            "-w",
-            "/bees/jailbreakd.plist",
-            NULL
-        });
-        printf("execprog on jailbreakd ret: %x\n", ret);
-        
-        int tries = 0;
-        while (access("/var/tmp/jailbreakd.pid", F_OK) != 0)
-        {
-            printf("Waiting for jailbreakd \n");
-            tries++;
-            sleep(1);
-            
-            if (tries >= 10) {
-                printf("too many tries for jbd - %d\n", tries);
-                ret = KERN_FAILURE;
-                goto out;
-            }
+            inject_trust("/usr/libexec/substrate");
+
+            ret = execprog("/usr/libexec/substrate", NULL);
+            LOG("substrate ret: %d", ret);
         }
     }
 
     {
+        // TODO: copy/check for launchctl
+        MACH(inject_trust("/bees/launchctl"));
+
         // start launchdaemons
         ret = execprog("/bees/launchctl", (const char **)&(const char *[])
                         {
@@ -403,8 +312,9 @@ kern_return_t jailbreak(uint32_t opt)
                         });
         if (ret != 0)
         {
-            printf("failed to start launchdaemons: %d\n", ret);
+            LOG("failed to start launchdaemons: %d", ret);
         }
+        LOG("started launchdaemons: %d", ret);
 
         // run rc.d scripts
         if (access("/etc/rc.d", F_OK) == 0)
@@ -415,12 +325,21 @@ kern_return_t jailbreak(uint32_t opt)
             
             NSArray *files = [fileMgr contentsOfDirectoryAtPath:@"/etc/rc.d" error:nil];
             
-            for (id file in files)
+            for (NSString *file in files)
             {
                 NSString *fullPath = [NSString stringWithFormat:@"/etc/rc.d/%@", file];
-                
+
+                // ignore substrate
+                if ([fullPath isEqualTo:@"/etc/rc.d/substrate"])
+                {
+                    LOG("ignoring substrate...");
+                    continue;
+                }
+
                 ret = sys([fullPath UTF8String]);
-                printf("ret on %s: %d\n", [fullPath UTF8String], ret);
+                
+                // poor man's WEIEXITSTATUS
+                LOG("ret on %s: %d\n", [fullPath UTF8String], (ret >> 8) & 0xff);
             }
         }
     }
@@ -428,7 +347,7 @@ kern_return_t jailbreak(uint32_t opt)
     if(opt & JBOPT_INSTALL_CYDIA)
     {
         // TODO: install Cydia.deb via dpkg 
-
+        
         if(opt & JBOPT_INSTALL_UNTETHER)
         {
             // TODO: Install untether & register it with dpkg

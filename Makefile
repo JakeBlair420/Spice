@@ -17,7 +17,7 @@ endif
 UNTETHER         = lib$(TARGET_CLI).dylib
 TRAMP            = trampoline
 ICONS           := $(wildcard $(RES)/Icon-*.png)
-FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) amfid_payload.dylib 
+FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) Unrestrict.dylib
 IGCC            ?= xcrun -sdk iphoneos gcc
 ARCH_GUI        ?= -arch arm64
 ARCH_CLI        ?= -arch armv7 -arch arm64
@@ -41,13 +41,10 @@ untether: $(UNTETHER) $(TRAMP)
 $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
 
-$(APP)/amfid_payload.dylib: module/libamfun
-	echo Making project $^
-	make -C $^
+# TODO: submodule this 
+$(APP)/Unrestrict.dylib: 
 	echo Copying file to $@
-	cp $^/bin/amfid_payload.dylib $@
-
-# $(APP)/amfid_payload.dylib | $(RES)/amfid_payload.dylib:
+	cp $(RES)/Unrestrict.dylib $@	
 
 $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
 	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^

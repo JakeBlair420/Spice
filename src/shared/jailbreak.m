@@ -51,6 +51,8 @@ offsets_t offs = (offsets_t){
         .vnode_lookup = 0xfffffff0071d3f90,
         .osunserializexml = 0xfffffff0074dd7e4,
         .smalloc = 0xfffffff006822cb0,
+        .proc_find = 0xfffffff0073ed31c,
+        .proc_rele = 0xfffffff0073ed28c,
 
         .ipc_port_alloc_special = 0xfffffff0070ad1a8,
         .ipc_kobject_set = 0xfffffff0070c3148,
@@ -116,8 +118,7 @@ kern_return_t jailbreak(uint32_t opt)
             
         if(ret != KERN_SUCCESS) goto out;
 
-        LOG("hold the line--");
-        sleep(3);
+        LOG("kernel been dun fucked");
     }
 
     kernel_slide = kbase - offs.constant.kernel_image_base;
@@ -251,9 +252,10 @@ kern_return_t jailbreak(uint32_t opt)
     if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
     {
         unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+        LOG("deleted old Unrestrict.dylib");
     }
 
-    COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/");
+    COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
     LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
 
     {
@@ -279,6 +281,8 @@ kern_return_t jailbreak(uint32_t opt)
         dict[@"OSBooleanTrue"]      = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + kernel_slide))];
         dict[@"OSBooleanFalse"]     = [NSString stringWithFormat:@"0x%016llx", rk64(rk64(offs.data.osboolean_true + 0x8 + kernel_slide))];
         dict[@"OSUnserializeXML"]   = [NSString stringWithFormat:@"0x%016llx", offs.funcs.osunserializexml + kernel_slide];
+        dict[@"ProcFind"]           = [NSString stringWithFormat:@"0x%016llx", offs.funcs.proc_find + kernel_slide];
+        dict[@"ProcRele"]           = [NSString stringWithFormat:@"0x%016llx", offs.funcs.proc_rele + kernel_slide];
         dict[@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", offs.funcs.smalloc + kernel_slide];
         dict[@"ZoneMapOffset"]      = [NSString stringWithFormat:@"0x%016llx", offs.data.zone_map + kernel_slide];
 
@@ -332,7 +336,7 @@ kern_return_t jailbreak(uint32_t opt)
                 NSString *fullPath = [NSString stringWithFormat:@"/etc/rc.d/%@", file];
 
                 // ignore substrate
-                if ([fullPath isEqualTo:@"/etc/rc.d/substrate"])
+                if ([fullPath isEqualToString:@"/etc/rc.d/substrate"])
                 {
                     LOG("ignoring substrate...");
                     continue;

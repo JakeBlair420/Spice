@@ -70,6 +70,8 @@ typedef struct {
         kptr_t vnode_lookup;
         kptr_t osunserializexml;
         kptr_t smalloc;
+        kptr_t proc_find;
+        kptr_t proc_rele;
 
         kptr_t ipc_port_alloc_special;
         kptr_t ipc_kobject_set;

@@ -8,6 +8,8 @@
 #include <fcntl.h>
 #include <stdio.h>
 
+#include "utils.h"
+
 // credits to tihmstar
 void suspend_all_threads()
 {
@@ -54,6 +56,16 @@ void resume_all_threads()
             }
         }
     }
+}
+
+void respring()
+{
+    execprog("/usr/bin/killall", (const char *)&(const char *[])
+    {
+        "/usr/bin/killall",
+        "SpringBoard",
+        NULL
+    });
 }
 
 // creds to stek29 on this one

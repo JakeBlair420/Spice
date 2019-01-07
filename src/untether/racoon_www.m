@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdio.h>
-#include "racoon_www.h"
 
+#include "racoon_www.h"
 
 uint32_t oldhigher_lcconf = 0xffffffff; // older value is unknown but we don't write to any address which has all high bits set so we can just set them here and the first time we need it in code we can handle it
 uint32_t total_bytes_written = 0;

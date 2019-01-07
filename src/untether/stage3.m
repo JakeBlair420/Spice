@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#if 0
+
 typedef uint64_t kptr_t;
 typedef int kern_return_t;
 typedef uint64_t size_t;
@@ -385,3 +387,5 @@ out:
     fakeport->ip_kobject = 0x0;
 	mach_port_deallocate(mach_task_self(), the_one);
 }
+
+#endif 

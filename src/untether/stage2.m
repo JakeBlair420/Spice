@@ -1,7 +1,3 @@
-#include "common.h"
-#include "rop.h"
-#include "stage2.h"
-#include "stage1.h"
 #include <mach/mach.h>
 #include <aio.h>
 #include <fcntl.h>
@@ -10,6 +6,10 @@
 
 #include <shared/iokit.h>
 #include <shared/realsym.h>
+
+#include "rop.h"
+#include "stage2.h"
+#include "stage1.h"
 
 // TODO: move those struct definitions into a new file
 

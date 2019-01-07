@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common.h"
 #include "rop.h"
 #include "racoon_www.h"
 #include "stage1.h"

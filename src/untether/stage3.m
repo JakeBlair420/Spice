@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#if 0
 typedef uint64_t kptr_t;
 typedef int kern_return_t;
 typedef uint32_t mach_port_t;
@@ -637,3 +638,4 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uin
 err:
     return 0x0;
 }
+#endif

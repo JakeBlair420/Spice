@@ -79,7 +79,12 @@ offsets_t offs = (offsets_t){
         .task_itk_self = 0xd8,
         .itk_registered = 0x2f0,
         .ipr_size = 0x8, // ipc_port_request->name->size
-        .sizeof_task = 0x5c8,
+        .sizeof_task = 0x5c8, // size of entire task struct
+        .proc_task = 0x18, // proc->task
+        .proc_p_csflags = 0x2a8, // proc->p_csflags (_cs_restricted, first ldr offset)
+        .task_t_flags = 0x3a0, // task->t_flags
+        .task_all_image_info_addr = 0x3a8, // task->all_image_info_addr (theoretically just +0x8 from t_flags)
+        .task_all_image_info_size = 0x3b0,  // task->all_image_info_size
     },
     .iosurface = {
         .create_outsize = 0xbc8,
@@ -274,7 +279,7 @@ kern_return_t jailbreak(uint32_t opt)
     {
         // TODO: copy/check for libjailbreak
         // chmod("/usr/lib/libjailbreak.dylib", 0755);
-        
+
         NSData *blob = [NSData dataWithContentsOfFile:@"/jb/offsets.plist"];
         if (blob == NULL)
         {

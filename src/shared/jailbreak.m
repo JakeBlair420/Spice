@@ -39,39 +39,40 @@
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
-        .kernel_image_base = 0xfffffff007004000,
+        .kernel_image_base = 0xfffffff007004000, // static
     },
     .funcs = {
-        .copyin = 0xfffffff00719e88c,
-        .copyout = 0xfffffff00719eab0,
-        .current_task = 0xfffffff0070e8c0c,
-        .get_bsdtask_info = 0xfffffff0070fe7ec,
-        .vm_map_wire_external = 0xfffffff007148fe8,
-        .vfs_context_current = 0xfffffff0071f2310,
-        .vnode_lookup = 0xfffffff0071d3f90,
-        .osunserializexml = 0xfffffff0074dd7e4,
-        .smalloc = 0xfffffff006822cb0,
-        .proc_find = 0xfffffff0073ed31c,
-        .proc_rele = 0xfffffff0073ed28c,
+        .copyin = 0xfffffff00719e88c, // symbol
+        .copyout = 0xfffffff00719eab0, // symbol 
+        .current_task = 0xfffffff0070e8c0c, // symbol
+        .get_bsdtask_info = 0xfffffff0070fe7ec, // symbol 
+        .vm_map_wire_external = 0xfffffff007148fe8, // symbol
+        .vfs_context_current = 0xfffffff0071f2310, // symbol
+        .vnode_lookup = 0xfffffff0071d3f90, // symbol
+        .osunserializexml = 0xfffffff0074dd7e4, // symbol (__Z16OSUnserializeXMLPKcPP8OSString)
+        .proc_find = 0xfffffff0073ed31c, // symbol
+        .proc_rele = 0xfffffff0073ed28c, // symbol 
 
+        .smalloc = 0xfffffff006822cb0,
         .ipc_port_alloc_special = 0xfffffff0070ad1a8,
         .ipc_kobject_set = 0xfffffff0070c3148,
         .ipc_port_make_send = 0xfffffff0070ac924,
     },
     .gadgets = {
-        .add_x0_x0_ret = 0xfffffff0063fddbc,
+        .add_x0_x0_ret = 0xfffffff0063fddbc, // gadget 
     },
     .data = {
-        .realhost = 0xfffffff0075d6b98,
-        .zone_map = 0xfffffff0075f3e50,
-        .kernel_task = 0xfffffff0075d1048,
-        .kern_proc = 0xfffffff0075d10a0,
-        .rootvnode = 0xfffffff0075d1088,
-        .osboolean_true = 0xfffffff007640468,
+        .kernel_task = 0xfffffff0075d1048, // symbol 
+        .kern_proc = 0xfffffff0075d10a0, // symbol (kernproc)
+        .rootvnode = 0xfffffff0075d1088, // symbol 
+
+        .realhost = 0xfffffff0075d6b98, // _host_priv_self -> adrp addr
+        .zone_map = 0xfffffff0075f3e50, // str 'zone_init: kmem_suballoc failed', first qword above 
+        .osboolean_true = 0xfffffff007640468, // OSBoolean::withBoolean -> first adrp addr
         .trust_cache = 0xfffffff0076ab828,
     },
     .vtabs = {
-        .iosurface_root_userclient = 0xfffffff006e73590,
+        .iosurface_root_userclient = 0xfffffff006e73590, // 'iometa -Csov IOSurfaceRootUserClient kernel', vtab=...
     },
     .struct_offsets = {
         .is_task_offset = 0x28,
@@ -147,30 +148,30 @@ kern_return_t jailbreak(uint32_t opt)
     uint64_t myproc = find_proc(getpid());
     VAL_CHECK(myproc);
 
-    uint64_t mytask = rk64(myproc + 0x18); // proc->task
+    uint64_t mytask = rk64(myproc + offs.struct_offsets.proc_task); // proc->task
     VAL_CHECK(mytask);
 
     {
         // patch our csflags
-        uint32_t csflags = rk32(myproc + 0x2a8); // proc->p_csflags (_cs_restricted, first ldr offset)
+        uint32_t csflags = rk32(myproc + offs.struct_offsets.proc_p_csflags); // proc->p_csflags (_cs_restricted, first ldr offset)
         VAL_CHECK(csflags);
         LOG("current csflags: %x", csflags);
 
         csflags = (csflags | CS_PLATFORM_BINARY | CS_INSTALLER | CS_GET_TASK_ALLOW) & ~(CS_RESTRICT | CS_HARD | CS_KILL);
-        wk32(myproc + 0x2a8, csflags);
+        wk32(myproc + offs.struct_offsets.proc_p_csflags, csflags);
         LOG("updated csflags: %x", csflags);
     }
 
     {
         // patch t_flags
         // bypasses task_conversion_eval checks 
-        uint32_t t_flags = rk32(mytask + 0x3a0); // task->t_flags
+        uint32_t t_flags = rk32(mytask + offs.struct_offsets.task_t_flags); // task->t_flags
         VAL_CHECK(t_flags);
 
         LOG("current t_flags: %x", t_flags);
         t_flags |= 0x400; // TF_PLATFORM
 
-        wk32(mytask + 0x3a0, t_flags);
+        wk32(mytask + offs.struct_offsets.task_t_flags, t_flags);
         LOG("new t_flags: %x", t_flags);
     }
 
@@ -193,8 +194,8 @@ kern_return_t jailbreak(uint32_t opt)
         // set dyld task info for kernel
         // note: this offset is pretty much the t_flags offset +0x8
         uint64_t kernel_task_addr = rk64(offs.data.kernel_task + kernel_slide);
-        wk64(kernel_task_addr + 0x3a8, kbase);  // task->all_image_info_addr
-        wk64(kernel_task_addr + 0x3b0, kernel_slide); // task->all_image_info_size
+        wk64(kernel_task_addr + offs.struct_offsets.all_image_info_addr, kbase);  // task->all_image_info_addr
+        wk64(kernel_task_addr + offs.struct_offsets.all_image_info_size, kernel_slide); // task->all_image_info_size
     
         struct task_dyld_info dyld_info = {0};
         mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
@@ -236,17 +237,29 @@ kern_return_t jailbreak(uint32_t opt)
     }\
     while (0)
 
-    // MACH(mkdir("/jb"));
+    if (acccess("/jb", F_OK) != 0)
+    {
+        MACH(mkdir("/jb"));
 
-    // if (access("/jb", F_OK) != 0)
-    // {
-    //     LOG("failed to create /jb directory!");
-    //     ret = KERN_FAILURE;
-    //     goto out;
-    // }
+        if (access("/jb", F_OK) != 0)
+        {
+            LOG("failed to create /jb directory!");
+            ret = KERN_FAILURE;
+            goto out;
+        }
+    }
 
     {
         // TODO: bootstrapping
+    }
+
+    if (access("/Library/MobileSubstrate", F_OK) != 0)
+    {
+        mkdir("/Library/MobileSubstrate", 0755);
+    }
+    if (access("/Lbirary/MobileSubstrate/ServerPlugins") != 0)
+    {
+        mkdir("/Library/MobileSubstrate/ServerPlugins");
     }
 
     if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
@@ -261,12 +274,8 @@ kern_return_t jailbreak(uint32_t opt)
     {
         // TODO: copy/check for libjailbreak
         // chmod("/usr/lib/libjailbreak.dylib", 0755);
-
-        // TODO: copy/check for jailbreakd 
-
-        unlink("/var/tmp/jailbreakd.pid");
-
-        NSData *blob = [NSData dataWithContentsOfFile:@"/bees/offsets.plist"];
+        
+        NSData *blob = [NSData dataWithContentsOfFile:@"/jb/offsets.plist"];
         if (blob == NULL)
         {
             LOG("failed to open offsets.plist");
@@ -286,11 +295,11 @@ kern_return_t jailbreak(uint32_t opt)
         dict[@"Smalloc"]            = [NSString stringWithFormat:@"0x%016llx", offs.funcs.smalloc + kernel_slide];
         dict[@"ZoneMapOffset"]      = [NSString stringWithFormat:@"0x%016llx", offs.data.zone_map + kernel_slide];
 
-        [dict writeToFile:@"/bees/offsets.plist" atomically:YES];
+        [dict writeToFile:@"/jb/offsets.plist" atomically:YES];
         LOG("wrote offsets.plist");
         
-        chown("/bees/offsets.plist", 0, 0);
-        chmod("/bees/offsets.plist", 0644);
+        chown("/jb/offsets.plist", 0, 0);
+        chmod("/jb/offsets.plist", 0644);
     }
 
     {
@@ -301,21 +310,28 @@ kern_return_t jailbreak(uint32_t opt)
             ret = execprog("/usr/libexec/substrate", NULL);
             LOG("substrate ret: %d", ret);
         }
+
+        /* 
+         * if substrate fails to launch we're in trouble
+         * we also need to be checking it's installed 
+         * before attempting to launch it 
+         * -- remember; it handles codesign patching
+         */ 
     }
 
     {
         // TODO: copy/check for launchctl
-        MACH(inject_trust("/bees/launchctl"));
+        MACH(inject_trust("/jb/launchctl"));
 
         // start launchdaemons
-        ret = execprog("/bees/launchctl", (const char **)&(const char *[])
-                        {
-                            "/bees/launchctl",
-                            "load",
-                            "-w",
-                            "/Library/LaunchDaemons",
-                            NULL
-                        });
+        ret = execprog("/jb/launchctl", (const char **)&(const char *[])
+        {
+            "/jb/launchctl",
+            "load",
+            "-w",
+            "/Library/LaunchDaemons",
+            NULL
+        });
         if (ret != 0)
         {
             LOG("failed to start launchdaemons: %d", ret);

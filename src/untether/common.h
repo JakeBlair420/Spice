@@ -49,6 +49,7 @@ struct offset_struct {
 	uint64_t mmap; // __mmap func
 	uint64_t memcpy; // memcpy func
 	uint64_t fcntl_raw_syscall; // the raw syscall stub of fcntl
+	uint64_t raw_mach_vm_remap_call; // raw syscall stub for mach_vm_remap
 	// kernel
 	uint64_t ipr_size; // ipr_size offset
 	uint64_t trust_chain_head_ptr;

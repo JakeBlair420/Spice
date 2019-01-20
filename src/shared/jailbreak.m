@@ -4,6 +4,8 @@
 #include <sys/stat.h>
 #include <mach/mach.h>
 
+#include <archive.h>
+
 #include "common.h"
 #include "infoleak.h"
 #include "pwn.h"
@@ -232,6 +234,7 @@ kern_return_t jailbreak(uint32_t opt)
     CFURLGetFileSystemRepresentation(resourcesUrl, TRUE, (UInt8 *)bundle_path, len);
     LOG("bundle path: %s", bundle_path);
     
+    // TODO: hash checks on binaries 
     #define COPY_RESOURCE(name, to_path)\
     do\
     {\
@@ -255,31 +258,135 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     {
-        // TODO: bootstrapping
+        // TOOD: move this code to a separate func/file 
+
+        if (access("/.spice_bootstrap_installed", F_OK) != 0)
+        {
+            COPY_RESOURCE("bootstrap.tar.lzma", "/jb/bootstrap.tar.lzma");
+
+            if (access("/jb/bootstrap.tar.lzma", F_OK) != 0)
+            {
+                LOG("failed to find the bootstrap file");
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            LOG("extracting bootstrap...");
+
+            chdir("/");
+
+            struct archive *ar = archive_read_new();
+            if (ar == NULL)
+            {
+                LOG("failed to create new archive: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            struct archive *dsk = archive_write_disk_new();
+            if (dsk == NULL)
+            {
+                LOG("failed ot create new archive disk: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            ret = archive_write_disk_set_options(dsk, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_ACL | ARCHIVE_EXTRACT_FFLAGS);
+            if (ret != ARCHIVE_OK)
+            {
+                LOG("failed to set archive extraction options: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            ret = archive_read_support_format_tar(ar);
+            if (ret != ARCHIVE_OK)
+            {
+                LOG("failed to set read_support_format_tar: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            ret = archive_read_support_compression_lzma(ar);
+            if (ret != ARCHIVE_OK)
+            {
+                LOG("failed to set read_support_compression_lzma: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            ret = archive_read_open_filename(ar, "/jb/bootstrap.tar.lzma", 0x10000);
+            if (ret != ARCHIVE_OK)
+            {
+                LOG("failed to open archive: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            while (1)
+            {
+                struct archive_entry *ent;
+                ret = archive_read_next_header(ar, &ent);
+                if (ret == ARCHIVE_EOF)
+                {
+                    break;
+                }
+
+                if (ret != ARCHIVE_OK)
+                {
+                    LOG("failed whilst reading archive header: %d", ret);
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                ret = archive_read_extract2(ar, ent, dsk);
+                if (ret != ARCHIVE_OK)
+                {
+                    LOG("failed to call archive_read_extract2: %d", ret);
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+            }
+
+            archive_read_close(ar);
+
+            archive_write_finish(dsk);
+
+            archive_read_finish(ar);
+            
+            LOG("finished extracting bootstrap");
+
+            fclose(fopen("/.spice_bootstrap_installed", "w+"));
+        }
     }
 
-    if (access("/Library/MobileSubstrate", F_OK) != 0)
     {
-        mkdir("/Library/MobileSubstrate", 0755);
-    }
-    if (access("/Lbirary/MobileSubstrate/ServerPlugins", F_OK) != 0)
-    {
-        mkdir("/Library/MobileSubstrate/ServerPlugins", 0755);
+        // TODO: check if substrate is not installed and install it from .deb file 
     }
 
-    if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
     {
-        unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
-        LOG("deleted old Unrestrict.dylib");
+        // handle substrate's unrestrict library 
+
+        if (access("/Library/MobileSubstrate", F_OK) != 0)
+        {
+            mkdir("/Library/MobileSubstrate", 0755);
+        }
+        if (access("/Lbirary/MobileSubstrate/ServerPlugins", F_OK) != 0)
+        {
+            mkdir("/Library/MobileSubstrate/ServerPlugins", 0755);
+        }
+
+        if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
+        {
+            unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+            LOG("deleted old Unrestrict.dylib");
+        }
+
+        COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+        LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
     }
 
-    COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
-    LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
-
     {
-        // TODO: copy/check for libjailbreak
-        // chmod("/usr/lib/libjailbreak.dylib", 0755);
-
         NSData *blob = [NSData dataWithContentsOfFile:@"/jb/offsets.plist"];
         if (blob == NULL)
         {

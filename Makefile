@@ -17,11 +17,11 @@ endif
 UNTETHER         = lib$(TARGET_CLI).dylib
 TRAMP            = trampoline
 ICONS           := $(wildcard $(RES)/Icon-*.png)
-FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) Unrestrict.dylib
+FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) Unrestrict.dylib bootstrap.tar.lzma
 IGCC            ?= xcrun -sdk iphoneos gcc
 ARCH_GUI        ?= -arch arm64
 ARCH_CLI        ?= -arch armv7 -arch arm64
-IGCC_FLAGS      ?= -Wall -Wformat=0 -flto -Isrc -fmodules -framework IOKit $(CFLAGS)
+IGCC_FLAGS      ?= -Wall -Wformat=0 -flto -Isrc -Iinclude -larchive -fmodules -framework IOKit $(CFLAGS)
 ifdef RELEASE
 IGCC_FLAGS      += -DRELEASE=1
 endif
@@ -41,10 +41,14 @@ untether: $(UNTETHER) $(TRAMP)
 $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
 
-# TODO: submodule this 
+# TODO: make this less shit 
 $(APP)/Unrestrict.dylib: 
 	echo Copying file to $@
 	cp $(RES)/Unrestrict.dylib $@	
+
+$(APP)/bootstrap.tar.lzma:
+	echo Copying file to $@
+	cp $(RES)/bootstrap.tar.lzma $@
 
 $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
 	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^

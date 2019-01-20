@@ -55,7 +55,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.stage3_fileoffset = 0;
 	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
 	myoffsets.stage3_size = 0x10000; // get the file size and round at page boundry
-	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x5c24; // nm of the function we want to jump to
+	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x59fc; // nm of the function we want to jump to
 	myoffsets.stage3_CS_blob = 49744; // jtool --sig shows that info and I think we can get it when parsing the header
 	myoffsets.stage3_CS_blob_size = 624; // same for this one
 

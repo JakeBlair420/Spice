@@ -102,6 +102,11 @@ typedef struct {
         uint32_t itk_registered;
         uint32_t ipr_size;
         uint32_t sizeof_task;
+        uint32_t proc_task;
+        uint32_t proc_p_csflags;
+        uint32_t task_t_flags;
+        uint32_t task_all_image_info_addr;
+        uint32_t task_all_image_info_size;
     } struct_offsets;
 
     struct {

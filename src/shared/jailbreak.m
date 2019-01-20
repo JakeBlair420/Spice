@@ -199,8 +199,8 @@ kern_return_t jailbreak(uint32_t opt)
         // set dyld task info for kernel
         // note: this offset is pretty much the t_flags offset +0x8
         uint64_t kernel_task_addr = rk64(offs.data.kernel_task + kernel_slide);
-        wk64(kernel_task_addr + offs.struct_offsets.all_image_info_addr, kbase);  // task->all_image_info_addr
-        wk64(kernel_task_addr + offs.struct_offsets.all_image_info_size, kernel_slide); // task->all_image_info_size
+        wk64(kernel_task_addr + offs.struct_offsets.task_all_image_info_addr, kbase);  // task->all_image_info_addr
+        wk64(kernel_task_addr + offs.struct_offsets.task_all_image_info_size, kernel_slide); // task->all_image_info_size
     
         struct task_dyld_info dyld_info = {0};
         mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
@@ -242,9 +242,9 @@ kern_return_t jailbreak(uint32_t opt)
     }\
     while (0)
 
-    if (acccess("/jb", F_OK) != 0)
+    if (access("/jb", F_OK) != 0)
     {
-        MACH(mkdir("/jb"));
+        MACH(mkdir("/jb", 0755));
 
         if (access("/jb", F_OK) != 0)
         {
@@ -262,9 +262,9 @@ kern_return_t jailbreak(uint32_t opt)
     {
         mkdir("/Library/MobileSubstrate", 0755);
     }
-    if (access("/Lbirary/MobileSubstrate/ServerPlugins") != 0)
+    if (access("/Lbirary/MobileSubstrate/ServerPlugins", F_OK) != 0)
     {
-        mkdir("/Library/MobileSubstrate/ServerPlugins");
+        mkdir("/Library/MobileSubstrate/ServerPlugins", 0755);
     }
 
     if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)

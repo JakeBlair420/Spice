@@ -260,6 +260,7 @@ kern_return_t jailbreak(uint32_t opt)
     {
         // TOOD: move this code to a separate func/file 
 
+        /*
         if (access("/.spice_bootstrap_installed", F_OK) != 0)
         {
             COPY_RESOURCE("bootstrap.tar.lzma", "/jb/bootstrap.tar.lzma");
@@ -358,6 +359,7 @@ kern_return_t jailbreak(uint32_t opt)
 
             fclose(fopen("/.spice_bootstrap_installed", "w+"));
         }
+        */
     }
 
     {

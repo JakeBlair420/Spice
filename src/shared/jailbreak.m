@@ -38,7 +38,7 @@
         ret = KERN_FAILURE;\
         goto out;\
     }
-
+#if 0
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
@@ -96,6 +96,66 @@ offsets_t offs = (offsets_t){
     },
     #endif
 };
+#else
+offsets_t offs = (offsets_t){
+    #ifdef __LP64__
+    .constant = {
+        .kernel_image_base = 0xfffffff007004000, // static
+    },
+    .funcs = {
+        .copyin = 0xfffffff0071aa804, // symbol
+        .copyout = 0xfffffff0071aaa28, // symbol 
+        .current_task = 0xfffffff0070f4d80, // symbol
+        .get_bsdtask_info = 0xfffffff00710a960, // symbol 
+        .vm_map_wire_external = 0xfffffff007154fb8, // symbol
+        .vfs_context_current = 0xfffffff0071fe2f0, // symbol
+        .vnode_lookup = 0xfffffff0071dff70, // symbol
+        .osunserializexml = 0xfffffff0074e8f38, // symbol (__Z16OSUnserializeXMLPKcPP8OSString)
+        .proc_find = 0xfffffff0073f8ba4, // symbol
+        .proc_rele = 0xfffffff0073f8b14, // symbol 
+
+        .smalloc = 0xfffffff006b1acb0,
+        .ipc_port_alloc_special = 0xfffffff0070b9328,
+        .ipc_kobject_set = 0xfffffff0070cf2c8,
+        .ipc_port_make_send = 0xfffffff0070b8aa4,
+    },
+    .gadgets = {
+        .add_x0_x0_ret = 0xfffffff0073ce75c, // gadget 
+    },
+    .data = {
+        .kernel_task = 0xfffffff0075dd048, // symbol 
+        .kern_proc = 0xfffffff0075dd0a0, // symbol (kernproc)
+        .rootvnode = 0xfffffff0075dd088, // symbol 
+
+        .realhost = 0xfffffff0075e2b98, // _host_priv_self -> adrp addr
+        .zone_map = 0xfffffff0075ffe50, // str 'zone_init: kmem_suballoc failed', first qword above 
+        .osboolean_true = 0xfffffff00764c468, // OSBoolean::withBoolean -> first adrp addr
+        .trust_cache = 0xfffffff0076b8ee8,
+    },
+    .vtabs = {
+        .iosurface_root_userclient = 0xfffffff006eb8e10, // 'iometa -Csov IOSurfaceRootUserClient kernel', vtab=...
+    },
+    .struct_offsets = {
+        .is_task_offset = 0x28,
+        .task_itk_self = 0xd8,
+        .itk_registered = 0x2f0,
+        .ipr_size = 0x8, // ipc_port_request->name->size
+        .sizeof_task = 0x5c8, // size of entire task struct
+        .proc_task = 0x18, // proc->task
+        .proc_p_csflags = 0x2a8, // proc->p_csflags (_cs_restricted, first ldr offset)
+        .task_t_flags = 0x3a0, // task->t_flags
+        .task_all_image_info_addr = 0x3a8, // task->all_image_info_addr (theoretically just +0x8 from t_flags)
+        .task_all_image_info_size = 0x3b0,  // task->all_image_info_size
+    },
+    .iosurface = {
+        .create_outsize = 0xbc8,
+        .create_surface = 0,
+        .set_value = 9,
+    },
+    #endif
+};
+#endif
+
 
 task_t kernel_task;
 kptr_t kernel_slide;
@@ -195,7 +255,7 @@ kern_return_t jailbreak(uint32_t opt)
 
         // set generator 
         // TODO: set this to 0x0
-        MACH(set_generator("0x4042a4a24545d094"));
+        MACH(set_generator("0xb562b9c40fd51b37"));
     }
     
     {

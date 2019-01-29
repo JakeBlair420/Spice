@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include "utils.h"
+#include "ArchiveFile.h"
 
 // credits to tihmstar
 void suspend_all_threads()
@@ -139,4 +140,34 @@ int execprog(const char *prog, const char* args[]) {
     close(fd);
     remove(logfile);
     return (int8_t)WEXITSTATUS(status);
+}
+
+bool extractDeb(NSString *debPath) {
+    if (![debPath hasSuffix:@".deb"]) {
+        LOG(@"%@: not a deb", debPath);
+        return NO;
+    }
+    if ([debPath containsString:@"firmware-sbin"]) {
+        // No, just no.
+        return YES;
+    }
+    NSPipe *pipe = [NSPipe pipe];
+    if (pipe == nil) {
+        LOG(@"Unable to make a pipe!");
+        return NO;
+    }
+    ArchiveFile *deb = [ArchiveFile archiveWithFile:debPath];
+    if (deb == nil) {
+        return NO;
+    }
+    ArchiveFile *tar = [ArchiveFile archiveWithFd:pipe.fileHandleForReading.fileDescriptor];
+    if (tar == nil) {
+        return NO;
+    }
+    LOG("Extracting %@", debPath);
+    dispatch_queue_t extractionQueue = dispatch_queue_create(NULL, NULL);
+    dispatch_async(extractionQueue, ^{
+        [deb extractFileNum:3 toFd:pipe.fileHandleForWriting.fileDescriptor];
+    });
+    return [tar extractToPath:@"/"];
 }

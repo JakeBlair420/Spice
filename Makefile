@@ -17,7 +17,7 @@ endif
 UNTETHER         = lib$(TARGET_CLI).dylib
 TRAMP            = trampoline
 ICONS           := $(wildcard $(RES)/Icon-*.png)
-FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) Unrestrict.dylib bootstrap.tar.lzma
+FILES           := $(TARGET_GUI) Info.plist Base.lproj/LaunchScreen.storyboardc $(ICONS:$(RES)/%=%) Unrestrict.dylib bootstrap.tar.lzma jailbreak-resources.deb
 IGCC            ?= xcrun -sdk iphoneos gcc
 ARCH_GUI        ?= -arch arm64
 ARCH_CLI        ?= -arch armv7 -arch arm64
@@ -49,6 +49,10 @@ $(APP)/Unrestrict.dylib:
 $(APP)/bootstrap.tar.lzma:
 	echo Copying file to $@
 	cp $(RES)/bootstrap.tar.lzma $@
+
+$(APP)/jailbreak-resources.deb:
+	echo Copying file to $@
+	cp $(RES)/jailbreak-resources.deb $@
 
 $(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
 	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^

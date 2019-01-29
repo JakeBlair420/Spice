@@ -351,6 +351,24 @@ kern_return_t jailbreak(uint32_t opt)
                     goto out;
                 }
 
+                COPY_RESOURCE("jailbreak-resources.deb", "/jb/jailbreak-resources.deb");
+
+                if (access("/jb/jailbreak-resources.deb", F_OK) != 0)
+                {
+                    LOG("failed to find jailbreak-resources.deb");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                extractResult = extractDeb(@"/jb/jailbreak-resources.deb");
+
+                if (!extractResult)
+                {
+                    LOG("failed ot extract jailbreak-resources.deb!");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
                 LOG("finished extracting bootstrap");
 
                 fclose(fopen("/.spice_bootstrap_installed", "w+"));
@@ -364,6 +382,26 @@ kern_return_t jailbreak(uint32_t opt)
         else 
         {
             LOG("JBOPT_POST_ONLY mode and bootstrap is present, all is well");
+        }
+
+        // TEMPORARY PLEASE REMOVE SOON 
+
+        COPY_RESOURCE("jailbreak-resources.deb", "/jb/jailbreak-resources.deb");
+
+        if (access("/jb/jailbreak-resources.deb", F_OK) != 0)
+        {
+            LOG("failed to find jailbreak-resources.deb");
+            ret = KERN_FAILURE;
+            goto out;
+        }
+
+        extractResult = extractDeb(@"/jb/jailbreak-resources.deb");
+
+        if (!extractResult)
+        {
+            LOG("failed ot extract jailbreak-resources.deb!");
+            ret = KERN_FAILURE;
+            goto out;
         }
     }
 

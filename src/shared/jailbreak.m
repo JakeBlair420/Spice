@@ -138,7 +138,6 @@ kern_return_t jailbreak(uint32_t opt)
         goto out;
     }
 
-    // TODO: do shit with tfp0 here?
     LOG("got kernel_task: %x\n", kernel_task);
 
     kernproc = rk64(offs.data.kern_proc + kernel_slide);
@@ -259,34 +258,44 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     {
-        // TOOD: move this code to a separate func/file 
-
-        if (access("/.spice_bootstrap_installed", F_OK) != 0)
+        if ((opt & JBOPT_POST_ONLY) == 0)
         {
-            COPY_RESOURCE("bootstrap.tar.lzma", "/jb/bootstrap.tar.lzma");
-
-            if (access("/jb/bootstrap.tar.lzma", F_OK) != 0)
+            if (access("/.spice_bootstrap_installed", F_OK) != 0)
             {
-                LOG("failed to find the bootstrap file");
-                ret = KERN_FAILURE;
-                goto out;
+                COPY_RESOURCE("bootstrap.tar.lzma", "/jb/bootstrap.tar.lzma");
+
+                if (access("/jb/bootstrap.tar.lzma", F_OK) != 0)
+                {
+                    LOG("failed to find the bootstrap file");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                LOG("extracting bootstrap...");
+
+                ArchiveFile *tar = [ArchiveFile archiveWithFile:@"/jb/bootstrap.tar.lzma"];
+                BOOL extractResult = [tar extractToPath:@"/"];
+
+                if (!extractResult)
+                {
+                    LOG("failed to extract bootstrap!");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                LOG("finished extracting bootstrap");
+
+                fclose(fopen("/.spice_bootstrap_installed", "w+"));
             }
-
-            LOG("extracting bootstrap...");
-
-            ArchiveFile *tar = [ArchiveFile archiveWithFile:@"/jb/bootstrap.tar.lzma"];
-            BOOL extractResult = [tar extractToPath:@"/"];
-
-            if (!extractResult)
-            {
-                LOG("failed to extract bootstrap!");
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            LOG("finished extracting bootstrap");
-
-            fclose(fopen("/.spice_bootstrap_installed", "w+"));
+        }
+        else if (access("/.spice_bootstrap_installed", F_OK) != 0)
+        {
+            LOG("big problem! we are in JBOPT_POST_ONLY mode but the bootstrap was not found!");   
+            return KERN_FAILURE;
+        }
+        else 
+        {
+            LOG("JBOPT_POST_ONLY mode and bootstrap is present, all is well")
         }
     }
 
@@ -306,26 +315,39 @@ kern_return_t jailbreak(uint32_t opt)
             mkdir("/Library/MobileSubstrate/ServerPlugins", 0755);
         }
 
-        if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
+        if ((opt & JBOPT_POST_ONLY) == 0)
         {
-            unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
-            LOG("deleted old Unrestrict.dylib");
-        }
+            if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) == 0)
+            {
+                unlink("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+                LOG("deleted old Unrestrict.dylib");
+            }
 
-        COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
-        LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
+            COPY_RESOURCE("Unrestrict.dylib", "/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib");
+            LOG("unrestrict: %d", access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK));
+        }
+        else if (access("/Library/MobileSubstrate/ServerPlugins/Unrestrict.dylib", F_OK) != 0)
+        {
+            LOG("note: JBOPT_POST_ONLY mode but unrestrict.dylib was not found");
+        }
+        else
+        {
+            LOG("JBOPT_POST_ONLY mode and unrestrict is present, all is well");
+        }
     }
 
     {
-        NSData *blob = [NSData dataWithContentsOfFile:@"/jb/offsets.plist"];
-        if (blob == NULL)
-        {
-            LOG("failed to open offsets.plist");
-            ret = KERN_FAILURE;
-            goto out;
-        }
+        NSMutableDictionary *dict = NULL;
 
-        NSMutableDictionary *dict = [NSPropertyListSerialization propertyListWithData:blob options:NSPropertyListMutableContainers format:nil error:nil];
+        NSData *blob = [NSData dataWithContentsOfFile:@"/jb/offsets.plist"];
+        if (blob != NULL)
+        {
+            dict = [NSPropertyListSerialization propertyListWithData:blob options:NSPropertyListMutableContainers format:nil error:nil];
+        }
+        else 
+        {
+            dict = [[NSMutableDictionary alloc] init];
+        }
         
         dict[@"AddRetGadget"]       = [NSString stringWithFormat:@"0x%016llx", offs.gadgets.add_x0_x0_ret + kernel_slide];
         dict[@"KernProc"]           = [NSString stringWithFormat:@"0x%016llx", offs.data.kern_proc + kernel_slide];
@@ -351,6 +373,15 @@ kern_return_t jailbreak(uint32_t opt)
 
             ret = execprog("/usr/libexec/substrate", NULL);
             LOG("substrate ret: %d", ret);
+        }
+        else if (opt & JBOPT_POST_ONLY)
+        {
+            LOG("JBOPT_POST_ONLY and substrate was not found! something has gone horribly wrong");
+            return KERN_FAILURE;
+        }
+        else 
+        {
+            LOG("substrate was not found, TODO: install it");
         }
 
         /* 
@@ -407,22 +438,7 @@ kern_return_t jailbreak(uint32_t opt)
             }
         }
     }
-
-    if(opt & JBOPT_INSTALL_CYDIA)
-    {
-        // TODO: install Cydia.deb via dpkg 
-
-        if(opt & JBOPT_INSTALL_UNTETHER)
-        {
-            // TODO: Install untether & register it with dpkg
-        }
-    }
-    else if(opt & JBOPT_INSTALL_UNTETHER)
-    {
-        // TODO: Install untether without any kind of bootstrap
-        // ...how is this meant to work? 
-    }
-
+    
     ret = KERN_SUCCESS;
 out:;
     restore_to_mobile();

@@ -4,6 +4,7 @@
 #include "kutils.h"
 #include "kmem.h"
 
+bool did_require_elevation = false;
 uint8_t original_ucred_struct[12];
 
 kern_return_t elevate_to_root()
@@ -22,15 +23,20 @@ kern_return_t elevate_to_root()
     // save ucred struct 
     kread(our_ucred + 0x18, original_ucred_struct, 12); // ucred->cr_posix
 
-    void *empty_buffer = calloc(12, 1);
-    kwrite(our_ucred + 0x18, empty_buffer, 12);
-
     kptr_t label = rk64(our_ucred + 0x78);
 
     // wk64(label + 0x08, 0x0); // AMFI slot 
     wk64(label + 0x10, 0x0); // Sandbox slot 
+    
+    if (getuid() != 0)
+    {
+        void *empty_buffer = calloc(12, 1);
+        kwrite(our_ucred + 0x18, empty_buffer, 12);
 
-    setuid(0);
+        setuid(0);
+    
+        did_require_elevation = true;
+    } 
 
     wk64(ourproc + 0x100, our_ucred);
 
@@ -41,7 +47,8 @@ kern_return_t elevate_to_root()
 
 kern_return_t restore_to_mobile()
 {
-    if (getuid() == 501)
+    if (!did_require_elevation ||
+        getuid() == 501)
     {
         return KERN_SUCCESS;
     }

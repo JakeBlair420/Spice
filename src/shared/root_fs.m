@@ -120,9 +120,11 @@ const char *get_root_snapshot_name(const char *path)
     return NULL;
 }
 
-kern_return_t patch_device_vnode(const char *dev_path)
+uint64_t vnode_from_path(const char *dev_path)
 {
-    uint64_t vfs_context_current = zm_fix_addr(kexecute(offs.funcs.vfs_context_current, 0x1, 0, 0, 0, 0, 0, 0));
+    LOG("finding vnode: %s", dev_path);
+
+    uint64_t vfs_context_current = zm_fix_addr(kexecute(offs.funcs.vfs_context_current, 0));
     LOG("vfs_context_current: %llx", vfs_context_current);
     
     uint64_t kstr_buf = kalloc(strlen(dev_path) + 1);
@@ -131,13 +133,29 @@ kern_return_t patch_device_vnode(const char *dev_path)
     // note to self: have to use vnode_lookup as you can't
     // get an fd on /dev/disk0s1s1 to pass to vnode_getfromfd
     uint64_t vnode_ptr = kalloc(sizeof(uint64_t));
-    kexecute(offs.funcs.vnode_lookup, kstr_buf, 0, vnode_ptr, vfs_context_current, 0, 0, 0);
+    kexecute(offs.funcs.vnode_lookup, 4, kstr_buf, 0, vnode_ptr, vfs_context_current);
     uint64_t vnode = rk64(vnode_ptr);
     LOG("got vnode: %llx", vnode);
+
+    kfree(kstr_buf, strlen(dev_path) + 1);
+    kfree(vnode_ptr, sizeof(uint64_t));
     
     if (vnode == 0x0)
     {
         LOG("failed to get vnode for %s", dev_path);
+        return KERN_FAILURE;
+    }
+
+    return vnode;
+}
+
+kern_return_t patch_device_vnode(const char *dev_path)
+{
+    LOG("patching vnode for: %s", dev_path);
+    uint64_t vnode = vnode_from_path(dev_path);
+    if (vnode == 0x0)
+    {
+        LOG("failed to patch vnode");
         return KERN_FAILURE;
     }
     

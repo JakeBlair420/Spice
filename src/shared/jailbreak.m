@@ -295,7 +295,7 @@ kern_return_t jailbreak(uint32_t opt)
         }
         else 
         {
-            LOG("JBOPT_POST_ONLY mode and bootstrap is present, all is well")
+            LOG("JBOPT_POST_ONLY mode and bootstrap is present, all is well");
         }
     }
 

@@ -364,7 +364,7 @@ kern_return_t jailbreak(uint32_t opt)
 
                 if (!extractResult)
                 {
-                    LOG("failed ot extract jailbreak-resources.deb!");
+                    LOG("failed to extract jailbreak-resources.deb!");
                     ret = KERN_FAILURE;
                     goto out;
                 }
@@ -395,11 +395,11 @@ kern_return_t jailbreak(uint32_t opt)
             goto out;
         }
 
-        extractResult = extractDeb(@"/jb/jailbreak-resources.deb");
+        BOOL exDeb = extractDeb(@"/jb/jailbreak-resources.deb");
 
-        if (!extractResult)
+        if (!exDeb)
         {
-            LOG("failed ot extract jailbreak-resources.deb!");
+            LOG("failed to extract jailbreak-resources.deb!");
             ret = KERN_FAILURE;
             goto out;
         }

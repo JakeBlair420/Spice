@@ -8,6 +8,9 @@
 #include <fcntl.h>
 #include <stdio.h>
 
+#import <Foundation/Foundation.h>
+
+#include "common.h"
 #include "utils.h"
 #include "ArchiveFile.h"
 

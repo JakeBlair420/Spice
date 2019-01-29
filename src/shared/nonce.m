@@ -13,15 +13,18 @@ kern_return_t set_generator(const char *new_generator)
     const char *current_generator = get_generator();
     LOG("got current generator: %s", current_generator);
     
-    if (strcmp(current_generator, new_generator) == 0)
+    if (current_generator != NULL)
     {
-        LOG("not setting new generator -- generator is already set");
+        if (strcmp(current_generator, new_generator) == 0)
+        {
+            LOG("not setting new generator -- generator is already set");
+            free((void *)current_generator);
+            return KERN_SUCCESS;
+        }
+        
         free((void *)current_generator);
-        return KERN_SUCCESS;
     }
-    
-    free((void *)current_generator);
-    
+
     CFStringRef str = CFStringCreateWithCStringNoCopy(NULL, new_generator, kCFStringEncodingUTF8, kCFAllocatorNull);
     if (str == NULL)
     {
@@ -67,7 +70,8 @@ const char *get_generator()
     ret = IORegistryEntryGetProperty(nvram, "com.apple.System.boot-nonce", buffer, &len);
     if (ret != KERN_SUCCESS)
     {
-        LOG("failed to get com.apple.System.boot-nonce");
+        // Nonce is not set
+        LOG("nonce is not currently set");
         return NULL;
     }
     

@@ -254,7 +254,15 @@ kern_return_t jailbreak(uint32_t opt)
 
         // set generator 
         // TODO: set this to 0x0
-        MACH(set_generator("0xb562b9c40fd51b37"));
+        MACH(set_generator("0xcb95ce776496b54f"));
+
+        const char *current_gen = get_generator();
+        LOG("generator is set to: %s", current_gen);
+        
+        if (current_gen)
+        {
+            free((void *)current_gen);
+        }
     }
     
     {

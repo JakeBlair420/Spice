@@ -500,12 +500,12 @@ kern_return_t jailbreak(uint32_t opt)
 
     {
         // TODO: copy/check for launchctl
-        MACH(inject_trust("/jb/launchctl"));
+        MACH(inject_trust("/bin/launchctl"));
 
         // start launchdaemons
-        ret = execprog("/jb/launchctl", (const char **)&(const char *[])
+        ret = execprog("/bin/launchctl", (const char **)&(const char *[])
         {
-            "/jb/launchctl",
+            "/bin/launchctl",
             "load",
             "-w",
             "/Library/LaunchDaemons",

@@ -19,6 +19,7 @@
 #include "nonce.h"
 #include "codesign.h"
 #include "remote.h"
+#include "ArchiveFile.h"
 
 #include "jailbreak.h"
 
@@ -260,7 +261,6 @@ kern_return_t jailbreak(uint32_t opt)
     {
         // TOOD: move this code to a separate func/file 
 
-        /*
         if (access("/.spice_bootstrap_installed", F_OK) != 0)
         {
             COPY_RESOURCE("bootstrap.tar.lzma", "/jb/bootstrap.tar.lzma");
@@ -274,92 +274,20 @@ kern_return_t jailbreak(uint32_t opt)
 
             LOG("extracting bootstrap...");
 
-            chdir("/");
+            ArchiveFile *tar = [ArchiveFile archiveWithFile:@"/jb/bootstrap.tar.lzma"];
+            BOOL extractResult = [tar extractToPath:@"/"];
 
-            struct archive *ar = archive_read_new();
-            if (ar == NULL)
+            if (!extractResult)
             {
-                LOG("failed to create new archive: %d", ret);
+                LOG("failed to extract bootstrap!");
                 ret = KERN_FAILURE;
                 goto out;
             }
 
-            struct archive *dsk = archive_write_disk_new();
-            if (dsk == NULL)
-            {
-                LOG("failed ot create new archive disk: %d", ret);
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            ret = archive_write_disk_set_options(dsk, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_ACL | ARCHIVE_EXTRACT_FFLAGS);
-            if (ret != ARCHIVE_OK)
-            {
-                LOG("failed to set archive extraction options: %d", ret);
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            ret = archive_read_support_format_tar(ar);
-            if (ret != ARCHIVE_OK)
-            {
-                LOG("failed to set read_support_format_tar: %d", ret);
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            ret = archive_read_support_compression_lzma(ar);
-            if (ret != ARCHIVE_OK)
-            {
-                LOG("failed to set read_support_compression_lzma: %d", ret);
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            ret = archive_read_open_filename(ar, "/jb/bootstrap.tar.lzma", 0x10000);
-            if (ret != ARCHIVE_OK)
-            {
-                LOG("failed to open archive: %d", ret);
-                ret = KERN_FAILURE;
-                goto out;
-            }
-
-            while (1)
-            {
-                struct archive_entry *ent;
-                ret = archive_read_next_header(ar, &ent);
-                if (ret == ARCHIVE_EOF)
-                {
-                    break;
-                }
-
-                if (ret != ARCHIVE_OK)
-                {
-                    LOG("failed whilst reading archive header: %d", ret);
-                    ret = KERN_FAILURE;
-                    goto out;
-                }
-
-                ret = archive_read_extract2(ar, ent, dsk);
-                if (ret != ARCHIVE_OK)
-                {
-                    LOG("failed to call archive_read_extract2: %d", ret);
-                    ret = KERN_FAILURE;
-                    goto out;
-                }
-            }
-
-            archive_read_close(ar);
-
-            archive_write_finish(dsk);
-
-            archive_read_finish(ar);
-            
             LOG("finished extracting bootstrap");
 
             fclose(fopen("/.spice_bootstrap_installed", "w+"));
         }
-        */
     }
 
     {

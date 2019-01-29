@@ -52,7 +52,7 @@ bool hasJailbroken = false;
     [jbButton setHidden:YES];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^(void) {
-        int ret = jailbreak(JBOPT_INSTALL_CYDIA | JBOPT_INSTALL_UNTETHER); // TODO: config
+        int ret = jailbreak(0);
         NSLog(@"jailbreak ret: %d", ret);
 
         if (ret != 0) {

@@ -155,7 +155,7 @@ uint32_t *static_spray_data = NULL;
 uint32_t curr_highest_key = 0;
 uint32_t *get_me_some_spray_data(uint32_t surface_id, kptr_t kdata_addr, uint32_t *spray_count)
 {
-    const uint32_t spray_qty = 10;
+    const uint32_t spray_qty = 20;
     *spray_count = (8 + (spray_qty * 5)) * sizeof(uint32_t);
 
     if (static_spray_data == NULL)

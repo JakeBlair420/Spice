@@ -544,6 +544,58 @@ kern_return_t jailbreak(uint32_t opt)
             }
         }
     }
+
+    {
+        // modify springboard settings plist so cydia shows 
+
+        ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
+        {
+            "/usr/bin/killall",
+            "-SIGSTOP",
+            "cfprefsd",
+            NULL
+        });
+        if (ret != 0)
+        {
+            LOG("failed to run killall(1)!");
+            ret = KERN_FAILURE;
+            goto out;
+        }
+
+        NSMutableDictionary* md = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist"];
+        [md setObject:[NSNumber numberWithBool:YES] forKey:@"SBShowNonDefaultSystemApps"];
+        [md writeToFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist" atomically:YES];
+        
+        ret = execprog("/usr/bin/killall", (const char **)&(const char *)
+        {
+            "/usr/bin/killall",
+            "-SIGSTOP",
+            "cfprefsd",
+            NULL
+        });
+        if (ret != KERN_SUCCESS)
+        {
+            LOG("failed to run killall(2)!");
+            ret = KERN_FAILURE;
+            goto out;
+        }
+
+        LOG("set SBShowNonDefaultSystemApps");
+    }
+
+    {
+        LOG("running uicache (this will take some time)...");
+
+        ret = execprog("/usr/bin/uicache", NULL);
+        if (ret != 0)
+        {
+            LOG("failed to run uicache!");
+            ret = KERN_FAILURE;
+            goto out;
+        }
+
+        LOG("done!");
+    }
     
     ret = KERN_SUCCESS;
 out:;

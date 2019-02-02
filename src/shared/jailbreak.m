@@ -200,6 +200,8 @@ kern_return_t jailbreak(uint32_t opt)
 
     LOG("got kernel_task: %x\n", kernel_task);
 
+    return KERN_SUCCESS;
+
     kernproc = rk64(offs.data.kern_proc + kernel_slide);
     VAL_CHECK(kernproc);
 
@@ -249,7 +251,7 @@ kern_return_t jailbreak(uint32_t opt)
 
     {
         // patch nvram
-        MACH(patch_nvram());
+        MACH(unlock_nvram());
         LOG("patched nvram successfully");
 
         // set generator 
@@ -263,6 +265,10 @@ kern_return_t jailbreak(uint32_t opt)
         {
             free((void *)current_gen);
         }
+
+        // do we want to lock it down again?
+        // leaving it unlocked allows ppl to set nonce from shell...
+        // MACH(lock_nvram()); 
     }
     
     {
@@ -566,7 +572,7 @@ kern_return_t jailbreak(uint32_t opt)
         [md setObject:[NSNumber numberWithBool:YES] forKey:@"SBShowNonDefaultSystemApps"];
         [md writeToFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist" atomically:YES];
         
-        ret = execprog("/usr/bin/killall", (const char **)&(const char *)
+        ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
         {
             "/usr/bin/killall",
             "-SIGSTOP",

@@ -64,7 +64,7 @@ void resume_all_threads()
 
 void respring()
 {
-    execprog("/usr/bin/killall", (const char *)&(const char *[])
+    execprog("/usr/bin/killall", (const char **)&(const char *[])
     {
         "/usr/bin/killall",
         "SpringBoard",

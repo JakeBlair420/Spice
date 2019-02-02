@@ -6,6 +6,9 @@
 #include "kutils.h"
 #include "kmem.h"
 
+uint64_t iodtnvram_obj = 0x0;
+uint64_t original_vtab = 0x0;
+
 kern_return_t set_generator(const char *new_generator)
 {
     kern_return_t ret = KERN_SUCCESS;
@@ -78,7 +81,7 @@ const char *get_generator()
     return strdup(buffer);
 }
 
-kern_return_t patch_nvram()
+kern_return_t unlock_nvram()
 {
     const uint64_t searchNVRAMProperty = 0x590;
     const uint64_t getOFVariablePerm = 0x558;
@@ -97,15 +100,15 @@ kern_return_t patch_nvram()
         return KERN_FAILURE;
     }
     
-    uint64_t iodtnvram_obj = rk64(port_addr + 0x68);
+    iodtnvram_obj = rk64(port_addr + 0x68);
     if (iodtnvram_obj == 0x0)
     {
         LOG("failed ot read IODTNVRAM obj");
         return KERN_FAILURE;
     }
     
-    uint64_t vtab_start = rk64(iodtnvram_obj);
-    if (vtab_start == 0x0)
+    original_vtab = rk64(iodtnvram_obj);
+    if (original_vtab == 0x0)
     {
         LOG("failed to find IODTNVRAM obj vtab");
         return KERN_FAILURE;
@@ -114,7 +117,7 @@ kern_return_t patch_nvram()
     const uint64_t vtab_size = 0x620;
     
     uint64_t *vtab_buf = malloc(vtab_size);
-    kread(vtab_start, (void *)vtab_buf, vtab_size);
+    kread(original_vtab, (void *)vtab_buf, vtab_size);
     
     vtab_buf[getOFVariablePerm / sizeof(uint64_t)] = vtab_buf[searchNVRAMProperty / sizeof(uint64_t)];
     
@@ -127,6 +130,27 @@ kern_return_t patch_nvram()
     free((void *)vtab_buf);
     
     LOG("patched nvram checks");
+
+    return KERN_SUCCESS;
+}
+
+kern_return_t lock_nvram()
+{
+    if (iodtnvram_obj == 0x0)
+    {
+        LOG("failed to find iodtnvram_obj to lock down");
+        return KERN_FAILURE;
+    }
+
+    if (original_vtab == 0x0)
+    {
+        LOG("failed to find original vtab to lock back down to");
+        return KERN_FAILURE;
+    }
+
+    wk64(iodtnvram_obj, original_vtab);
+
+    LOG("locked down nvram");
 
     return KERN_SUCCESS;
 }

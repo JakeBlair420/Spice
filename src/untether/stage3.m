@@ -551,7 +551,7 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
 	// spawn the other bin
 	uint64_t pid;
-	offsets->userland_funcs.posix_spawn(&pid,"/bootstrap/test/stage4",NULL,NULL,NULL,NULL);
+	offsets->userland_funcs.posix_spawn(&pid,"/mystuff/stage4",NULL,NULL,NULL,NULL);
 
 	LOG("finally spawned stage 4 what a ride");
 

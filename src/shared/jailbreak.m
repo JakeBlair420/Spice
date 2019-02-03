@@ -38,7 +38,7 @@
         ret = KERN_FAILURE;\
         goto out;\
     }
-#if 0
+#if 1
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
@@ -199,8 +199,6 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     LOG("got kernel_task: %x\n", kernel_task);
-
-    return KERN_SUCCESS;
 
     kernproc = rk64(offs.data.kern_proc + kernel_slide);
     VAL_CHECK(kernproc);
@@ -375,9 +373,9 @@ kern_return_t jailbreak(uint32_t opt)
                     goto out;
                 }
 
-                LOG("finished extracting bootstrap");
-
                 fclose(fopen("/.spice_bootstrap_installed", "w+"));
+
+                LOG("finished extracting bootstrap");
 
                 {
                     // modify springboard settings plist so cydia shows 
@@ -391,7 +389,7 @@ kern_return_t jailbreak(uint32_t opt)
                     });
                     if (ret != 0)
                     {
-                        LOG("failed to run killall(1)!");
+                        LOG("failed to run killall(1): %d", ret);
                         ret = KERN_FAILURE;
                         goto out;
                     }
@@ -409,7 +407,7 @@ kern_return_t jailbreak(uint32_t opt)
                     });
                     if (ret != KERN_SUCCESS)
                     {
-                        LOG("failed to run killall(2)!");
+                        LOG("failed to run killall(2): %d", ret);
                         ret = KERN_FAILURE;
                         goto out;
                     }
@@ -444,7 +442,34 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     {
-        // TODO: check if substrate is not installed and install it from .deb file 
+        // check if substrate is not installed & install it from a deb file 
+        if ((opt & JBOPT_POST_ONLY) == 0)
+        {
+            if (access("/usr/libexec/substrate", F_OK) != 0)
+            {
+                LOG("substrate was not found? installing it...");
+
+                COPY_RESOURCE("mobilesubstrate.deb", "/jb/mobilesubstrate.deb");
+
+                if (access("/jb/mobilesubstrate.deb", F_OK) != 0)
+                {
+                    LOG("tried to install substrate but failed to copy it!");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                BOOL extractResult = extractDeb(@"/jb/mobilesubstrate.deb");
+
+                if (!extractResult)
+                {
+                    LOG("attempted to install substrate but failed to extract it!");
+                    ret = KERN_FAILURE;
+                    goto out;
+                }
+
+                LOG("finished installing substrate");
+            }
+        }
     }
 
     {
@@ -525,7 +550,9 @@ kern_return_t jailbreak(uint32_t opt)
         }
         else 
         {
-            LOG("substrate was not found, TODO: install it");
+            LOG("substrate was not found, why was it not installed?!?!");
+            ret = KERN_FAILURE;
+            goto out;
         }
 
         /* 
@@ -580,6 +607,28 @@ kern_return_t jailbreak(uint32_t opt)
                 
                 // poor man's WEIEXITSTATUS
                 LOG("ret on %s: %d\n", [fullPath UTF8String], (ret >> 8) & 0xff);
+            }
+        }
+    }
+
+    {
+        if ((opt & JBOPT_POST_ONLY) != 0)
+        {
+            LOG("finished post exploitation, running ldrestart...");
+
+            if (access("/usr/bin/ldrestart", F_OK) != 0)
+            {
+                LOG("failed to find ldrestart?!");
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            ret = execprog("/usr/bin/ldrestart", NULL);
+            if (ret != 0)
+            {
+                LOG("failed to execute ldrestart: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
             }
         }
     }

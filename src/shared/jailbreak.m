@@ -38,7 +38,7 @@
         ret = KERN_FAILURE;\
         goto out;\
     }
-#if 1
+#if 0
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
@@ -614,19 +614,19 @@ kern_return_t jailbreak(uint32_t opt)
     {
         if ((opt & JBOPT_POST_ONLY) != 0)
         {
-            LOG("finished post exploitation, running ldrestart...");
+            LOG("finished post exploitation, respringing...");
 
-            if (access("/usr/bin/ldrestart", F_OK) != 0)
+            if (access("/usr/bin/killall", F_OK) != 0)
             {
-                LOG("failed to find ldrestart?!");
+                LOG("failed to find killall?!");
                 ret = KERN_FAILURE;
                 goto out;
             }
 
-            ret = execprog("/usr/bin/ldrestart", NULL);
+            ret = execprog("/usr/bin/killall", (const char**)&(const char * []) {"/usr/bin/killall","SpringBoard"});
             if (ret != 0)
             {
-                LOG("failed to execute ldrestart: %d", ret);
+                LOG("failed to execute killall: %d", ret);
                 ret = KERN_FAILURE;
                 goto out;
             }

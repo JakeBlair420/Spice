@@ -17,6 +17,8 @@
 
 #ifdef RELEASE
 #   define LOG(str, args...) do { } while(0)
+#elif defined UNTETHERDBG
+#   define LOG(str, args...) do { NSLog(@"[%s] " str, __func__, ##args); sleep(1);} while(0)
 #else
 #   define LOG(str, args...) do { NSLog(@"[%s] " str, __func__, ##args); } while(0)
 #endif

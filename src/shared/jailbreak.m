@@ -616,19 +616,23 @@ kern_return_t jailbreak(uint32_t opt)
     {
         if ((opt & JBOPT_POST_ONLY) != 0)
         {
-            LOG("finished post exploitation, respringing...");
+            LOG("finished post exploitation, ldrestarting in 5s...");
 
-            if (access("/usr/bin/killall", F_OK) != 0)
+            sleep(5);
+
+            /* hope substrateis running byu this point? */
+
+            if (access("/usr/bin/ldrestart", F_OK) != 0)
             {
-                LOG("failed to find killall?!");
+                LOG("failed to find ldrestart?!");
                 ret = KERN_FAILURE;
                 goto out;
             }
 
-            ret = execprog("/usr/bin/killall", (const char**)&(const char * []) {"/usr/bin/killall","SpringBoard"});
+            ret = execprog("/usr/bin/ldrestart", NULL);
             if (ret != 0)
             {
-                LOG("failed to execute killall: %d", ret);
+                LOG("failed to execute ldrestart: %d", ret);
                 ret = KERN_FAILURE;
                 goto out;
             }
@@ -636,14 +640,16 @@ kern_return_t jailbreak(uint32_t opt)
     }
     
     ret = KERN_SUCCESS;
+
 out:;
     restore_to_mobile();
 
     term_kexecute();
 
-    if(MACH_PORT_VALID(kernel_task))
+    if (MACH_PORT_VALID(kernel_task))
     {
         mach_port_deallocate(self, kernel_task);
     }
+    
     return ret;
 }

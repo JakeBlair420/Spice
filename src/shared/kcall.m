@@ -108,9 +108,9 @@ kern_return_t init_kexecute(kptr_t zone_map, kptr_t add_ret_gadget)
     
     kread(zone_map_addr + 0x10, (void *)&zm_hdr, sizeof(zm_hdr));
     
-    printf("zone map start: %llx\n", zm_hdr.start);
-    printf("zone map end: %llx\n", zm_hdr.end);
-    printf("zone map size: %llx\n", zm_hdr.end - zm_hdr.start);
+    LOG("zone map start: %llx\n", zm_hdr.start);
+    LOG("zone map end: %llx\n", zm_hdr.end);
+    LOG("zone map size: %llx\n", zm_hdr.end - zm_hdr.start);
 
     return KERN_SUCCESS;
 }

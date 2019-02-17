@@ -312,7 +312,7 @@ add_x0_gadget (from libiconv.2.dylib):
 		curr_rop_var->next = new_rop_var; \
 	} \
 	new_rop_var->name = strdup(varname); \
-	new_rop_var->size = varsize + (8-(varsize%8)); \
+	new_rop_var->size = varsize; \
 	new_rop_var->buffer = (void*)buf;\
 	new_rop_var->next = NULL; \
 	curr_rop_var = new_rop_var; 

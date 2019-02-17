@@ -13,12 +13,12 @@ void kread(uint64_t kaddr, void* buffer, uint32_t length)
                                                (mach_vm_address_t)buffer,
                                                &outsize);
     if (err != KERN_SUCCESS) {
-        printf("tfp0 read failed %s addr: 0x%llx err:%x port:%x\n", mach_error_string(err), kaddr, err, kernel_task);
+        LOG("tfp0 read failed %s addr: 0x%llx err:%x port:%x\n", mach_error_string(err), kaddr, err, kernel_task);
         return;
     }
     
     if (outsize != length) {
-        printf("tfp0 read was short (expected %lx, got %llx\n", sizeof(uint32_t), outsize);
+        LOG("tfp0 read was short (expected %lx, got %llx\n", sizeof(uint32_t), outsize);
         return;
     }
 }
@@ -32,7 +32,7 @@ void kwrite(uint64_t kaddr, void* buffer, uint32_t length)
                         (mach_msg_type_number_t)length);
     
     if (err != KERN_SUCCESS) {
-        printf("tfp0 write failed: %s %x\n", mach_error_string(err), err);
+        LOG("tfp0 write failed: %s %x\n", mach_error_string(err), err);
         return;
     }
 }
@@ -69,7 +69,7 @@ uint64_t kalloc(uint64_t size)
     kern_return_t err = mach_vm_allocate(kernel_task, &addr, ksize, VM_FLAGS_ANYWHERE);
     
     if (err != KERN_SUCCESS) {
-        printf("unable to allocate kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
+        LOG("unable to allocate kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
         return 0;
     }
     
@@ -81,7 +81,7 @@ void kfree(uint64_t addr, uint64_t size)
     kern_return_t err = mach_vm_deallocate(kernel_task, addr, size);
     
     if (err != KERN_SUCCESS) {
-        printf("unable to deallocate kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
+        LOG("unable to deallocate kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
     }
 }
 
@@ -90,6 +90,6 @@ void kprotect(uint64_t kaddr, uint32_t size, int prot)
     kern_return_t err = mach_vm_protect(kernel_task, (mach_vm_address_t)kaddr, (mach_vm_size_t)size, 0, (vm_prot_t)prot);
     
     if (err != KERN_SUCCESS) {
-        printf("unable to change protection of kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
+        LOG("unable to change protection of kernel memory via tfp0: %s %x\n", mach_error_string(err), err);
     }
 }

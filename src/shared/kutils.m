@@ -56,7 +56,7 @@ uint32_t get_pid_for_name(const char *name)
 uint64_t task_self_addr()
 {
     uint64_t self_proc = find_proc(getpid());
-    printf("got self_proc = %llx\n", self_proc);
+    LOG("got self_proc = %llx\n", self_proc);
     
     return rk64(self_proc + 0x18);
 }

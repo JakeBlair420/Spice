@@ -616,7 +616,25 @@ kern_return_t jailbreak(uint32_t opt)
     {
         if ((opt & JBOPT_POST_ONLY) != 0)
         {
-            LOG("finished post exploitation, ldrestarting in 5s...");
+            LOG("finished post exploitation");
+
+            LOG("unloading prdaily...");
+
+            ret = execprog("/bin/launchctl", (const char **)&(const char *[])
+            {
+                "/bin/launchctl",
+                "unload",
+                "/System/Library/LaunchDaemons/com.apple.prdaily.plist",
+                NULL
+            });
+            if (ret != 0)
+            {
+                LOG("failed to unload prdaily! ret: %d", ret);
+                ret = KERN_FAILURE;
+                goto out;
+            }
+
+            LOG("prdaily unloaded -- sleeping 5s before ldrestart'ing...");
 
             sleep(5);
 
@@ -650,6 +668,6 @@ out:;
     {
         mach_port_deallocate(self, kernel_task);
     }
-    
+
     return ret;
 }

@@ -538,6 +538,24 @@ kern_return_t jailbreak(uint32_t opt)
     }
 
     {
+        if (access("/Library/Substrate", F_OK) == 0)
+        {
+            // move to old directory
+            NSString *newPath = [NSString stringWithFormat:@"/Library/Substrate.%lu", (unsigned long)time(NULL)];
+            LOG("moving /Library/Substrate to new path: %@", newPath);
+
+            [fileMgr moveItemAtPath:@"/Library/Substrate" toPath:newPath error:nil];
+
+            if (access("/Library/Substrate", F_OK) == 0)
+            {
+                LOG("failed to move /Library/Substrate!!");
+                ret = KERN_FAILURE;
+                goto out;
+            }
+        }
+
+        mkdir("/Library/Substrate", 1755);
+
         if (access("/usr/libexec/substrate", F_OK) == 0)
         {
             inject_trust("/usr/libexec/substrate");
@@ -548,7 +566,8 @@ kern_return_t jailbreak(uint32_t opt)
         else if (opt & JBOPT_POST_ONLY)
         {
             LOG("JBOPT_POST_ONLY and substrate was not found! something has gone horribly wrong");
-            return KERN_FAILURE;
+            ret = KERN_FAILURE;
+            goto out;
         }
         else 
         {

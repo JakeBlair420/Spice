@@ -131,15 +131,12 @@ int execprog(const char *prog, const char* args[]) {
         perror("open logfile");
         return 1;
     }
-    
-    printf("contents of %s:\n", logfile);
-    printf("---\n");
-    char buf[1] = {0};
-    while (read(fd, buf, sizeof(buf)) == sizeof(buf)) {
-        printf("%s", buf);
-    }
-    printf("---\n");
-    
+
+    char buf[200] = { 0 };
+    read(fd, buf, sizeof(buf));
+
+    LOG("contents of %s:\n%s", logfile, buf);
+
     close(fd);
     remove(logfile);
     return (int8_t)WEXITSTATUS(status);

@@ -537,6 +537,13 @@ kern_return_t jailbreak(uint32_t opt)
         chmod("/jb/offsets.plist", 0644);
     }
 
+	{
+		if (opt & JBOPT_POST_ONLY) {
+			// spawing a bin to get amfid up
+			execprog("/bin/bash",NULL);
+		}
+	}
+
     {
         if (access("/Library/Substrate", F_OK) == 0)
         {
@@ -653,9 +660,7 @@ kern_return_t jailbreak(uint32_t opt)
                 goto out;
             }
 
-            LOG("prdaily unloaded -- sleeping 5s before ldrestart'ing...");
-
-            sleep(5);
+            LOG("prdaily unloaded\n");
 
             /* hope substrateis running byu this point? */
 

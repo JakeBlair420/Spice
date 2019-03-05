@@ -6,8 +6,9 @@
 #include <stdlib.h> // exit
 #include <string.h> // strlen
 
-#include "untether/a64.h"
-#include "./shared/realsym.h"
+#include "a64.h"
+#include "../shared/realsym.h"
+#include "uland_offsetfinder.h"
 
 #ifdef ULAND_OFFSETFINDER
 #   define LOG(str, args...) do { NSLog(@ str "\n", ##args); } while(0)
@@ -89,11 +90,11 @@ void * find_code_xref(void * addr) {
 
 void * isakmp_cfg_config_addr() {
 	void * error_handling_instruction = find_strref("No more than %d WINS");
-	LOG(@"Found error handling stub @ %p\n",error_handling_instruction);
+	LOG("Found error handling stub @ %p\n",error_handling_instruction);
 	for (void * i = error_handling_instruction; i > (error_handling_instruction-20*4); i-=4) {
 		void * xref = find_code_xref(i);
 		if (xref != 0) {
-			LOG(@"Found xref from %p\n",xref);			
+			LOG("Found xref from %p\n",xref);			
 			// TODO: check if the instruction is a b.gt
 			for (void * backwards_search = xref; backwards_search > (xref-20*4); backwards_search-=4) {
 				void * curr_inst = racoon_bin+((size_t)backwards_search);
@@ -109,11 +110,11 @@ void * isakmp_cfg_config_addr() {
 
 void * lcconf_addr() {
 	void * error_handling_instruction = find_strref("failed to set my ident: %s");
-	LOG(@"Found error handling stub @ %p\n",error_handling_instruction);
+	LOG("Found error handling stub @ %p\n",error_handling_instruction);
 	for (void * i = error_handling_instruction; i > (error_handling_instruction-20*4); i-=4) {
 		void * xref = find_code_xref(i);
 		if (xref != 0) {
-			LOG(@"Found xref from %p\n",xref);			
+			LOG("Found xref from %p\n",xref);			
 			// TODO: check if the instruction is a cbnz
 			for (void * backwards_search = xref; backwards_search > (xref-20*4); backwards_search-=4) {
 				void * curr_inst = racoon_bin+((size_t)backwards_search);
@@ -137,10 +138,10 @@ size_t get_cache_maxslide() {
 void * memmove_cache_ptr(char * path) {
 	void * strlcpy = (void*)realsym(path,"_strlcpy");	
 	if (strlcpy == NULL) {
-		LOG(@"Couldn't find strlcpy\n");
+		LOG("Couldn't find strlcpy\n");
 		exit(1);
 	}
-	LOG(@"strlcpy @ %p\n",strlcpy);
+	LOG("strlcpy @ %p\n",strlcpy);
 	strlcpy -= 0x180000000;
 	strlcpy += (size_t)shared_cache;
 	bool first = true;
@@ -163,10 +164,10 @@ void * memmove_cache_ptr(char * path) {
 void * get_stackpivot_addr(char * path) {
 	void * longjmp = (void*)realsym(path,"__longjmp");
 	if (longjmp == NULL) {
-		LOG(@"longjmp wasn't found\n");
+		LOG("longjmp wasn't found\n");
 		exit(1);
 	}
-	LOG(@"longjmp is @ %p\n",longjmp);
+	LOG("longjmp is @ %p\n",longjmp);
 	longjmp -= 0x180000000;
 	longjmp += (size_t)shared_cache;
 	for (void * curr_instr = longjmp; curr_instr < (longjmp+0x4000); curr_instr+=4) {
@@ -208,10 +209,10 @@ void * get_cbz_x0_x16_load(void * cbz_x0_gadget_addr) {
 void * get_errno_offset(char * path) {
 	void * __mmap = (void*)realsym(path,"___mmap");
 	if (__mmap == NULL) {
-		LOG(@"mmap wasn't found\n");
+		LOG("mmap wasn't found\n");
 		exit(1);
 	}
-	LOG(@"mmap is @ %p\n",__mmap);
+	LOG("mmap is @ %p\n",__mmap);
 	__mmap -= 0x180000000;
 	__mmap += (size_t)shared_cache;
 	for (void * curr_instr = __mmap; curr_instr < (__mmap+40*4);curr_instr+=4) {
@@ -228,10 +229,10 @@ void * get_errno_offset(char * path) {
 void * get_mach_msg_offset(char * path) {
 	void * mach_msg_addr = (void*)realsym(path,"_mach_msg");
 	if (mach_msg_addr == NULL) {
-		LOG(@"mach_msg wasn't found\n");
+		LOG("mach_msg wasn't found\n");
 		exit(1);
 	}
-	LOG(@"mach_msg is @ %p\n",mach_msg_addr);
+	LOG("mach_msg is @ %p\n",mach_msg_addr);
 	return NULL;
 }
 */
@@ -240,32 +241,32 @@ void * get_mach_msg_offset(char * path) {
 void init_uland_offsetfinder(char * racoon_bin, char * cache) {
 	int fd = open("./racoon_test_bin_11.3.1_iPAD_5,1",O_RDONLY);
     if (fd < 0) {
-    	LOG(@"Couldn't open file\n");
+    	LOG("Couldn't open file\n");
     	exit(1);
     }
     struct stat tmp;
     if(fstat(fd,&tmp)) {
-    	LOG(@"fstat failed\n");
+    	LOG("fstat failed\n");
     	exit(1);
     }
     racoon_bin_size = tmp.st_size;
     racoon_bin = mmap(0,(tmp.st_size & ~0x3fff) + 0x4000, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
     if (racoon_bin == NULL) {
-    	LOG(@"mmap failed\n");
+    	LOG("mmap failed\n");
     }
     fd = open("./dyld_shared_cache_arm64",O_RDONLY);
     if (fd < 0) {
-    	LOG(@"Couldn't load cache\n");
+    	LOG("Couldn't load cache\n");
     	exit(1);
     }
     if(fstat(fd,&tmp)) {
-    	LOG(@"fstat failed\n");
+    	LOG("fstat failed\n");
     	exit(1);
     }
     shared_cache_size = tmp.st_size;
     shared_cache = mmap(0,tmp.st_size, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
     if (shared_cache == NULL) {
-    	LOG(@"mmap failed\n");
+    	LOG("mmap failed\n");
     }
 }
 
@@ -273,44 +274,44 @@ void init_uland_offsetfinder(char * racoon_bin, char * cache) {
 int main() {
 	int fd = open("./racoon_test_bin_11.3.1_iPAD_5,1",O_RDONLY);
 	if (fd < 0) {
-		LOG(@"Couldn't open file\n");
+		LOG("Couldn't open file\n");
 		exit(1);
 	}
 	struct stat tmp;
 	if(fstat(fd,&tmp)) {
-		LOG(@"fstat failed\n");
+		LOG("fstat failed\n");
 		exit(1);
 	}
 	racoon_bin_size = tmp.st_size;
 	racoon_bin = mmap(0,(tmp.st_size & ~0x3fff) + 0x4000, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
 	if (racoon_bin == NULL) {
-		LOG(@"mmap failed\n");
+		LOG("mmap failed\n");
 	}
 	fd = open("./dyld_shared_cache_arm64",O_RDONLY);
 	if (fd < 0) {
-		LOG(@"Couldn't load cache\n");
+		LOG("Couldn't load cache\n");
 		exit(1);
 	}
 	if(fstat(fd,&tmp)) {
-		LOG(@"fstat failed\n");
+		LOG("fstat failed\n");
 		exit(1);
 	}
 	shared_cache_size = tmp.st_size;
 	shared_cache = mmap(0,tmp.st_size, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
 	if (shared_cache == NULL) {
-		LOG(@"mmap failed\n");
+		LOG("mmap failed\n");
 	}
-	LOG(@"String at: %p\n", find_data(racoon_bin,tmp.st_size,"No more than %d WINS",strlen("No more than %d WINS")));
-	LOG(@"String at: %p\n", find_str("No more than %d WINS"));
-	LOG(@"Ref to str: %p\n", find_strref("No more than %d WINS"));
-	LOG(@"isakmp_cfg_config is @ %p\n",isakmp_cfg_config_addr());
-	LOG(@"lcconf_addr is @ %p\n",lcconf_addr());
-	LOG(@"max slide is 0x%zx\n",get_cache_maxslide());
-	LOG(@"memmove_cache_ptr is @ %p\n",memmove_cache_ptr("./dyld_shared_cache_arm64"));
-	LOG(@"stackpivot is @ %p\n",get_stackpivot_addr("./dyld_shared_cache_arm64"));
-	LOG(@"cbz_gadget is @ %p\n",get_cbz_x0_gadget());
-	LOG(@"cbz_gadget_x16_load is @ %p\n",get_cbz_x0_x16_load(get_cbz_x0_gadget()));
-	LOG(@"errno_offset is @ %p\n",get_errno_offset("./dyld_shared_cache_arm64"));
-	//LOG(@"mach_msg_offset is @ %p\n",get_mach_msg_offset("./dyld_shared_cache_arm64"));
+	LOG("String at: %p\n", find_data(racoon_bin,tmp.st_size,"No more than %d WINS",strlen("No more than %d WINS")));
+	LOG("String at: %p\n", find_str("No more than %d WINS"));
+	LOG("Ref to str: %p\n", find_strref("No more than %d WINS"));
+	LOG("isakmp_cfg_config is @ %p\n",isakmp_cfg_config_addr());
+	LOG("lcconf_addr is @ %p\n",lcconf_addr());
+	LOG("max slide is 0x%zx\n",get_cache_maxslide());
+	LOG("memmove_cache_ptr is @ %p\n",memmove_cache_ptr("./dyld_shared_cache_arm64"));
+	LOG("stackpivot is @ %p\n",get_stackpivot_addr("./dyld_shared_cache_arm64"));
+	LOG("cbz_gadget is @ %p\n",get_cbz_x0_gadget());
+	LOG("cbz_gadget_x16_load is @ %p\n",get_cbz_x0_x16_load(get_cbz_x0_gadget()));
+	LOG("errno_offset is @ %p\n",get_errno_offset("./dyld_shared_cache_arm64"));
+	//LOG("mach_msg_offset is @ %p\n",get_mach_msg_offset("./dyld_shared_cache_arm64"));
 }
 #endif

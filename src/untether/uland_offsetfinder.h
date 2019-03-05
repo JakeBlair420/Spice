@@ -19,6 +19,10 @@ void * get_stackpivot_addr(char * path);
 void * get_cbz_x0_gadget();
 void * get_cbz_x0_x16_load(void * cbz_x0_gadget_addr);
 void * get_errno_offset(char * path);
+void * get_pivot_x21_gadget();
+void * get_beast_gadget();
+void * get_str_x0_gadget();
+void * get_add_x0_gadget();
 void init_uland_offsetfinder(char * racoon_bin, char * cache);
 #define find_data(bin,bin_size,data,data_size) find_data_raw(bin,bin_size,data,data_size,1)
 

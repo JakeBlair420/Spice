@@ -60,6 +60,10 @@ void * find_ref(void * addr) {
 
 void * find_strref(char * str) {
 	void * str_addr = find_str(str);
+	if (str_addr == NULL) {
+		LOG("%s not found\n",str);
+		return NULL;
+	}
 	return find_ref(str_addr);
 }
 
@@ -139,7 +143,7 @@ void * memmove_cache_ptr(char * path) {
 	void * strlcpy = (void*)realsym(path,"_strlcpy");	
 	if (strlcpy == NULL) {
 		LOG("Couldn't find strlcpy\n");
-		exit(1);
+		return NULL;
 	}
 	LOG("strlcpy @ %p\n",strlcpy);
 	strlcpy -= 0x180000000;
@@ -165,7 +169,7 @@ void * get_stackpivot_addr(char * path) {
 	void * longjmp = (void*)realsym(path,"__longjmp");
 	if (longjmp == NULL) {
 		LOG("longjmp wasn't found\n");
-		exit(1);
+		return NULL;
 	}
 	LOG("longjmp is @ %p\n",longjmp);
 	longjmp -= 0x180000000;
@@ -210,7 +214,7 @@ void * get_errno_offset(char * path) {
 	void * __mmap = (void*)realsym(path,"___mmap");
 	if (__mmap == NULL) {
 		LOG("mmap wasn't found\n");
-		exit(1);
+		return NULL;
 	}
 	LOG("mmap is @ %p\n",__mmap);
 	__mmap -= 0x180000000;
@@ -302,8 +306,8 @@ void * get_add_x0_gadget() {
 
 
 
-void init_uland_offsetfinder(char * racoon_bin, char * cache) {
-	int fd = open(racoon_bin,O_RDONLY);
+void init_uland_offsetfinder(char * racoon_bin_path, char * cache) {
+	int fd = open(racoon_bin_path,O_RDONLY);
     if (fd < 0) {
     	LOG("Couldn't open file\n");
     	exit(1);
@@ -318,6 +322,7 @@ void init_uland_offsetfinder(char * racoon_bin, char * cache) {
     if (racoon_bin == NULL) {
     	LOG("mmap failed\n");
     }
+	LOG("Racoon binary mapped @ %llx from path %s with size %llx\n",racoon_bin,racoon_bin_path,racoon_bin_size);
     fd = open(cache,O_RDONLY);
     if (fd < 0) {
     	LOG("Couldn't load cache\n");

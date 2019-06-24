@@ -1,0 +1,3 @@
+[submodule "submodules/libjake"]
+	path = submodules/libjake
+	url = https://forge.siguza.net/PsychoTea/libjake.git

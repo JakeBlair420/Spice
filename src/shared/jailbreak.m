@@ -114,7 +114,7 @@ offsets_t offs = (offsets_t){
         .proc_find = 0xfffffff0073f8ba4, // symbol
         .proc_rele = 0xfffffff0073f8b14, // symbol 
 
-        .smalloc = 0xfffffff006b1acb0,
+        .smalloc = 0xfffffff006b1acb0, // isn't used anywhere
         .ipc_port_alloc_special = 0xfffffff0070b9328,
         .ipc_kobject_set = 0xfffffff0070cf2c8,
         .ipc_port_make_send = 0xfffffff0070b8aa4,
@@ -129,7 +129,7 @@ offsets_t offs = (offsets_t){
 
         .realhost = 0xfffffff0075e2b98, // _host_priv_self -> adrp addr
         .zone_map = 0xfffffff0075ffe50, // str 'zone_init: kmem_suballoc failed', first qword above 
-        .osboolean_true = 0xfffffff00764c468, // OSBoolean::withBoolean -> first adrp addr
+        .osboolean_true = 0xfffffff00764c468, // OSBoolean::withBoolean -> first adrp addr (isn't used anywhere tho)
         .trust_cache = 0xfffffff0076b8ee8,
     },
     .vtabs = {

@@ -1,5 +1,8 @@
 #include "common.h"
 #include <shared/iokit.h>
+#include "symbols.h"
+#include "patchfinder.h"
+
 #ifndef STAGE2_H
 #define STAGE2_H
 
@@ -103,5 +106,5 @@ typedef volatile struct {
 
 
 uint64_t get_addr_from_name(offset_struct_t * offsets,char * name);
-void stage2(offset_struct_t * offsets,char * base_dir); 
+void stage2(jake_symbols_t kernel_symbols,offset_struct_t * offsets,char * base_dir); 
 #endif

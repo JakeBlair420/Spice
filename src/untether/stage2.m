@@ -521,7 +521,7 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	}
 }
 
-void stage2(offset_struct_t * offsets,char * base_dir) {
+void stage2(jake_symbols_t kernel_symbols, offset_struct_t * offsets,char * base_dir) {
 
 	// TODO: the stage2_databuffer_len should be set in install.m
 	offsets->stage2_databuffer_len = 0x10000;
@@ -1276,27 +1276,28 @@ _STRUCT_ARM_THREAD_STATE64
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
 	memset(lib_offsets,0,sizeof(offsets_t));
 	lib_offsets->constant.kernel_image_base = 0xfffffff007004000;
-	lib_offsets->funcs.copyin = 0xfffffff0071aa804;
-	lib_offsets->funcs.copyout = 0xfffffff0071aaa28;
-	lib_offsets->funcs.current_task = 0xfffffff0070f4d80;
-	lib_offsets->funcs.get_bsdtask_info = 0xfffffff00710a960;
-	lib_offsets->funcs.vm_map_wire_external = 0xfffffff007154fb8;
-	lib_offsets->funcs.vfs_context_current = 0xfffffff0071fe2f0;
-	lib_offsets->funcs.vnode_lookup = 0xfffffff0071dff70;
-	lib_offsets->funcs.osunserializexml = 0xfffffff0074e8f38;
-	lib_offsets->funcs.smalloc = 0xfffffff006b1acb0;
+#define sym(name) find_symbol(kernel_symbols,name)
+	lib_offsets->funcs.copyin = sym("_copyin");
+	lib_offsets->funcs.copyout = sym("_copyout");
+	lib_offsets->funcs.current_task = sym("_current_task");
+	lib_offsets->funcs.get_bsdtask_info = sym("_get_bsdtask_info");
+	lib_offsets->funcs.vm_map_wire_external = sym("vm_map_wire_external");
+	lib_offsets->funcs.vfs_context_current = sym("vfs_context_current");
+	lib_offsets->funcs.vnode_lookup = sym("_vnode_lookup");
+	lib_offsets->funcs.osunserializexml = sym("__Z16OSUnserializeXMLPKcPP8OSString");
+	lib_offsets->funcs.smalloc = 0xfffffff006b1acb0; // isn't used anymore
 	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b9328;
 	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070cf2c8;
 	lib_offsets->funcs.ipc_port_make_send = 0xfffffff0070b8aa4;
-	lib_offsets->gadgets.add_x0_x0_ret = 0xfffffff0073ce75c;
-	lib_offsets->data.realhost = 0xfffffff0075e2b98;
-	lib_offsets->data.zone_map = 0xfffffff0075ffe50;
-	lib_offsets->data.kernel_task = 0xfffffff0075dd048;
-	lib_offsets->data.kern_proc = 0xfffffff0075dd0a0;
-	lib_offsets->data.rootvnode = 0xfffffff0075dd088;
-	lib_offsets->data.osboolean_true = 0xfffffff00764c468;
-	lib_offsets->data.trust_cache = 0xfffffff0076b8ee8;
-	// maybe wrong
+	lib_offsets->gadgets.add_x0_x0_ret = sym("_csblob_get_cdhash");
+	lib_offsets->data.realhost = find_realhost(kernel_symbols);
+	lib_offsets->data.zone_map = find_zonemap(kernel_symbols);
+	lib_offsets->data.kernel_task = sym("_kernel_task");
+	lib_offsets->data.kern_proc = sym("_kernproc");
+	lib_offsets->data.rootvnode = sym("_rootvnode");
+	lib_offsets->data.osboolean_true = 0xfffffff00764c468; // isn't used anymore
+	lib_offsets->data.trust_cache = 0xfffffff0076b8ee8; // isn't used by stage 3
+	// maybe wrong (we will not include them in the symbol finder for now, if that fails we still have the killswitch and could add version differences later)
 	lib_offsets->struct_offsets.is_task_offset = 0x28; 
 	lib_offsets->struct_offsets.task_itk_self = 0xd8;
 	lib_offsets->struct_offsets.itk_registered = 0x2f0;

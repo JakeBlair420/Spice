@@ -252,6 +252,7 @@ char * pos_description_DBG(int pos, int longjmp_buf) {
 	}
 	return buf;
 } 
+#ifndef RELEASE
 void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 	rop_gadget_t * next = offsets->stage2_ropchain;	
 	rop_gadget_t * prev_gadget;
@@ -498,6 +499,7 @@ void build_chain_DBG(offset_struct_t * offsets,rop_var_t * ropvars) {
 	}
 	printf("===\n");
 }
+#endif
 void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	void * buf_pointer = offsets->stage2_databuffer;
 	uint64_t buf_in_stage = offsets->stage2_base;
@@ -1421,7 +1423,7 @@ _STRUCT_ARM_THREAD_STATE64
 	if (curr_rop_var != NULL) {
 		build_databuffer(offsets,rop_var_top);
 	}
-#ifdef DEBUG
+#ifndef RELEASE 
 	build_chain_DBG(offsets,rop_var_top);
 #endif
 	char path[1024];

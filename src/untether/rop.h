@@ -65,7 +65,7 @@ typedef struct rop_var rop_var_t;
 	}else{ \
 		prev = curr_gadget; \
 	}
-#ifdef DEBUG
+#ifndef RELEASE 
 #define ADD_COMMENT(mycomment) \
 	curr_gadget->comment = malloc(sizeof(struct rop_gadget_comment)); \
 	curr_gadget->comment->line = __LINE__; \

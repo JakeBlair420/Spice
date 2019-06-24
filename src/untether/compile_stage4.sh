@@ -1,0 +1,1 @@
+xcrun -sdk iphoneos clang -arch arm64 -I../../include -larchive -framework IOKit stage4.m ../shared/*.m -framework Foundation -I../  -o stage4 && ~/Downloads/jtool --sign --inplace stage4 && ~/Downloads/jtool --sig stage4

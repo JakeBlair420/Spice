@@ -523,7 +523,7 @@ void build_databuffer(offset_struct_t * offsets, rop_var_t * ropvars) {
 	}
 }
 
-void stage2(jake_symbols_t kernel_symbols, offset_struct_t * offsets,char * base_dir) {
+void stage2(jake_img_t kernel_symbols, offset_struct_t * offsets,char * base_dir) {
 
 	// TODO: the stage2_databuffer_len should be set in install.m
 	offsets->stage2_databuffer_len = 0x10000;
@@ -1278,7 +1278,7 @@ _STRUCT_ARM_THREAD_STATE64
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
 	memset(lib_offsets,0,sizeof(offsets_t));
 	lib_offsets->constant.kernel_image_base = 0xfffffff007004000;
-#define sym(name) find_symbol(kernel_symbols,name)
+#define sym(name) jake_find_symbol(kernel_symbols,name)
 	lib_offsets->funcs.copyin = sym("_copyin");
 	lib_offsets->funcs.copyout = sym("_copyout");
 	lib_offsets->funcs.current_task = sym("_current_task");

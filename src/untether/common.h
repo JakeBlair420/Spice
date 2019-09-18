@@ -14,6 +14,10 @@
     typedef uint32_t kptr_t;
 #endif
 
+#ifdef LOG
+#undef LOG
+#endif
+
 #ifdef RELEASE
 #   define LOG(str, args...) do { } while(0)
 #else

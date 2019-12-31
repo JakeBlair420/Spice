@@ -1,3 +1,4 @@
+# this is a fucked up makefile for stage 2 because I suck at building right Makefiles so the Makefile in root is outdated (can only be used to build the app and not stage 2)
 cd ../../submodules/libjake/
 make PLATFORM=ios
 cd ../../src/untether/

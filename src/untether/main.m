@@ -5,6 +5,8 @@
 #include "install.h"
 #include <shared/jailbreak.h>
 
+// TODO: port generator.m here
+
 // This is invoked in four different ways:
 // - When the dylib is loaded into racoon.
 //   This is the only case where we actually wanna go this route,

@@ -3,6 +3,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+// a hell lot of type defs are ahead of you because we can't use any functions here
+// this is basically the version of the exploit used in the app (minus the race part obv) just copy pasted into here and then I changed a few things so that it doesn't rely on cache functions
+// so for a more readable version/to understand it please check the version under shared (pwn.m)
+
 typedef uint64_t kptr_t;
 typedef int kern_return_t;
 typedef uint32_t mach_port_t;
@@ -207,6 +211,7 @@ typedef struct
 #define MACH_MSGH_BITS(remote, local) ((remote) | ((local) << 8))
 
 
+// function that's used to place data of a userland buffer in kernel land
 uint64_t send_buffer_to_kernel_stage3_implementation(offsets_t * offsets,void * fake_client,uint64_t kslide, mach_port_t the_one, uint64_t our_task_addr, mach_msg_data_buffer_t *buffer_msg, size_t msg_size);
 
 #define spelunk(addr) ((zm_hdr.start & 0xffffffff00000000) | ((addr) & 0xffffffff))

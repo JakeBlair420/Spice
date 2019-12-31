@@ -6,6 +6,8 @@
 #ifndef STAGE2_H
 #define STAGE2_H
 
+
+// fake msg struct
 typedef uint64_t mach_port_poly_t; // this just assumes the type idk if it's acc a uint64_t
 
 typedef struct {
@@ -49,6 +51,7 @@ union {
     MEMLEAK_Reply Out;
 } MEMLEAK_msg;
 
+// fake port struct defined as volatile because on none smap devs we will place it into userland
 typedef volatile struct {
     uint32_t ip_bits;
     uint32_t ip_references;

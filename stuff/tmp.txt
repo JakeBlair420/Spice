@@ -1,3 +1,4 @@
+// good deamones maybe
 User    RunAtLoad   Enabled     Entitlement     Path
 mobile  no          yes         yes             /System/Library/CoreServices/AssistiveTouch.app/assistivetouchd
 mobile  yes         yes         no              /System/Library/CoreServices/SpringBoard.app/SpringBoard
@@ -9,9 +10,12 @@ mobile  no          yes         yes             /System/Library/PrivateFramework
 root    yes         yes         no              /usr/libexec/locationd
 mobile  yes         yes         no              /usr/libexec/sharingd
 
+// some kernel symbols
 "Undefined kernel instruction: pc=%p instr=%x\\n"
 0xfffffff0075c0038
 
+// the sysctl we use to store data
 swapfilename
 
+// the r2 command to find the BEAST_GADGET
 /x e0031faae0031faae0031faae0031faae0031faae0031faae0031faae0031faae0033fd6fd7b47a9:f0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0fff0ff1ffeffffffffffff

@@ -131,7 +131,11 @@ So we just use swapprefix sysctl and the cool thing about this is that it's a st
 We can use this to put our fake port at a known address and both new trustcache entries.
 
 ## Installation
+For compilation of stage 2 and 4 use the shell scripts in the untether folder, the makefile only works for the app. The compile command line for stage 3 got lost unfortunatly,
+but you can easily compile it by disabling all security features (no stack cookie etc) and then also removing the standard lib. Basically you just need to make sure that it compiles as shellcode without lib dependecies
+as it's just loaded as a blob into mem and then executed.
 For the installation copy stage 2 onto the device into some random folder and stage 3 (/usr/lib/racoon.dylib) and 4 (/mystuff/stage4) at their right paths.
+Create the folder /var/run/racoon and run stage 2.
 Then execute racoon till it doesn't kernel panic anymore to make sure you got the right offsets.
 Then also set the nvram variable boot-args to "this boy needs some milk" and check if the system keeps running stable even with racoon (this is the killswitch).
 If you did you can then go for the real untether by replacing one of the launch daemons and unsetting the variable to run the untether on the next boot.

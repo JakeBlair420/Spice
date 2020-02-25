@@ -79,7 +79,7 @@ If the explanation in text form wasn't enough for you please look at the slides/
 The bug was "fixed" by Apple in 2012 as CVE-2012-3727 but fixed the bug in the wrong function (dns4 one) so this is still an 0day at the moment.
 
 ### ASLR bypass
-The aslr bypass is pretty complex to explain but basically there is the dyld shared cache containing all the libaries from apple that gets loaded into each process.
+The aslr bypass is pretty complex to explain but basically there is the dyld shared cache containing all the libraries from apple that gets loaded into each process.
 The load base gets randomized on boot by the kernel and for that apple defined a start address and as size. So the kernel will basically use the size of the cache and substract it from the predefined size to get the maximum slide.
 This was defined as 1 GB prior to iOS 12 where it was increased to 4 GB "fixing" the bug (we believe that apple never thought this was a secuirty issue and just fixed it by accident because the cache got bigger than 1 GB and so they had to do something about it). 
 With each iOS version the cache obviously gets bigger and bigger because Apple adds new functions etc and on iOS 11 this caused a problem because there the cache got bigger than 900 MB.

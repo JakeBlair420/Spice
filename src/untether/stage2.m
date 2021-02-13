@@ -1368,9 +1368,24 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->funcs.vnode_lookup = sym("_vnode_lookup");
 	lib_offsets->funcs.osunserializexml = sym("__Z16OSUnserializeXMLPKcPP8OSString");
 	lib_offsets->funcs.smalloc = 0xfffffff006b1acb0; // isn't used anymore
+
+
+#define N69_11_3
+#if J96_11_3_1
 	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b9328;
 	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070cf2c8;
 	lib_offsets->funcs.ipc_port_make_send = 0xfffffff0070b8aa4;
+#endif
+#if N69_11_3
+	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
+	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
+	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
+#endif
+#if N69_11_4
+	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
+	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
+	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
+#endif
 	lib_offsets->gadgets.add_x0_x0_ret = sym("_csblob_get_cdhash");
 	lib_offsets->data.realhost = find_realhost(kernel_symbols);
 	lib_offsets->data.zone_map = find_zonemap(kernel_symbols);

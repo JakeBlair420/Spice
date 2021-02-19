@@ -176,7 +176,7 @@ offsets_t offs = (offsets_t){
         .proc_find = 0xFFFFFFF0073F35B8 , // symbol
         .proc_rele = 0xFFFFFFF0073F3528, // symbol 
 
-        .smalloc = 0xfffffff006b1acb0, // isn't used anywhere
+        .smalloc = 0xFFFFFFF006B5ECB0, // found by searching for "sandbox memory allocation failure"
         .ipc_port_alloc_special = 0xFFFFFFF0070B915C, // \"ipc_processor_init\" in processor_start -> call above
         .ipc_kobject_set = 0xFFFFFFF0070CF30C, // above _mach_msg_send_from_kernel_proper
         .ipc_port_make_send = 0xFFFFFFF0070B88D8, // first call in long path of KUNCUserNotificationDisplayFromBundle
@@ -235,7 +235,7 @@ offsets_t offs = (offsets_t){
         .proc_find = 0xFFFFFFF0073F3B68, // symbol
         .proc_rele = 0xFFFFFFF0073F3AD8, // symbol 
 
-        .smalloc = 0xfffffff006b1acb0, // isn't used anywhere
+        .smalloc = 0xFFFFFFF006B57CB0, // found by searching for "sandbox memory allocation failure" 
         .ipc_port_alloc_special = 0xFFFFFFF0070B915C, // \"ipc_processor_init\" in processor_start -> call above
         .ipc_kobject_set = 0xFFFFFFF0070CF30C, // above _mach_msg_send_from_kernel_proper
         .ipc_port_make_send = 0xFFFFFFF0070B88D8, // first call in long path of KUNCUserNotificationDisplayFromBundle

@@ -9,6 +9,7 @@ APP              = $(BIN)/Payload/$(TARGET_GUI).app
 SRC_GUI          = src/app
 SRC_CLI          = src/untether
 SRC_ALL          = src/shared
+JAKE             = submodules/libjake
 ifdef RELEASE
 IPA              = $(TARGET_GUI).ipa
 else
@@ -25,6 +26,7 @@ IGCC_FLAGS      ?= -Wall -Wformat=0 -flto -Isrc -Iinclude -larchive -fmodules -f
 ifdef RELEASE
 IGCC_FLAGS      += -DRELEASE=1
 endif
+UNTETHER_FLAGS  ?= -I$(JAKE)/src -I$(JAKE)/img4lib/libvfs -L$(JAKE) -ljake -L$(JAKE)/img4lib -limg4 -L$(JAKE)/img4lib/lzfse/build/bin -llzfse
 IBTOOL          ?= xcrun -sdk iphoneos ibtool
 IBTOOL_FLAGS    ?= --output-format human-readable-text --errors --warnings --notices --target-device iphone --target-device ipad $(IBFLAGS)
 SIGN            ?= codesign
@@ -41,10 +43,10 @@ untether: $(UNTETHER) $(TRAMP)
 $(IPA): $(addprefix $(APP)/, $(FILES))
 	cd $(BIN) && zip -x .DS_Store -qr9 ../$@ Payload
 
-# TODO: make this less shit 
-$(APP)/Unrestrict.dylib: 
+# TODO: make this less shit
+$(APP)/Unrestrict.dylib:
 	echo Copying file to $@
-	cp $(RES)/Unrestrict.dylib $@	
+	cp $(RES)/Unrestrict.dylib $@
 
 $(APP)/bootstrap.tar.lzma:
 	echo Copying file to $@
@@ -54,7 +56,7 @@ $(APP)/jailbreak-resources.deb:
 	echo Copying file to $@
 	cp $(RES)/jailbreak-resources.deb $@
 
-$(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m | $(APP)
+$(APP)/$(TARGET_GUI): $(SRC_GUI)/*.m $(SRC_ALL)/*.m $(SRC_ALL)/*.c | $(APP)
 	$(IGCC) $(ARCH_GUI) -o $@ -Wl,-exported_symbols_list,res/app.txt $(IGCC_FLAGS) $^
 
 $(APP)/Info.plist: $(RES)/Info.plist | $(APP)
@@ -72,17 +74,24 @@ $(APP):
 $(APP)/Base.lproj:
 	mkdir -p $@
 
-$(UNTETHER): $(SRC_CLI)/*.m $(SRC_ALL)/*.m
-	$(IGCC) $(ARCH_CLI) -shared -o $@ -Wl,-exported_symbols_list,res/untether.txt $(IGCC_FLAGS) $^
+$(UNTETHER): $(SRC_CLI)/*.m $(SRC_ALL)/*.m $(SRC_ALL)/*.c $(JAKE)/libjake.a
+	$(IGCC) $(ARCH_CLI) $(UNTETHER_FLAGS) -shared -o $@ -Wl,-exported_symbols_list,res/untether.txt $(IGCC_FLAGS) $^
 	$(SIGN) $(SIGN_FLAGS) $@
 
 $(TRAMP):
 	$(IGCC) $(ARCH_CLI) -o $@ -L. -l$(TARGET_CLI) -Wl,-exported_symbols_list,res/tramp.txt $(IGCC_FLAGS) -xc <<<''
 	$(SIGN) $(SIGN_FLAGS) $@
 
+$(JAKE)/libjake.a: $(JAKE)/Makefile
+	$(MAKE) $(AM_MAKEFLAGS) -C $(JAKE) CC='$(IGCC) $(ARCH_CLI)' LD='$(IGCC) $(ARCH_CLI)'
+
+$(JAKE)/Makefile:
+	git submodule update --init --recursive
+
 clean:
 	rm -rf $(BIN)
 	rm -f *.ipa *.dylib $(TRAMP)
+	$(MAKE) $(AM_MAKEFLAGS) -C $(JAKE) clean
 
 ifndef ID
 install:

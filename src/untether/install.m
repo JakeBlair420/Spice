@@ -17,6 +17,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
 
 #define N69AP_11_3
 #ifdef N69AP_11_3
+    jake_img_t kernel_symbols; // dummy
 	offset_struct_t myoffsets;
     // adr @ 0x100067c10
     // ldr @ 0x1000670e0

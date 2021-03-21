@@ -1358,6 +1358,7 @@ _STRUCT_ARM_THREAD_STATE64
 	offsets_t * lib_offsets = malloc(sizeof(offsets_t));
 	memset(lib_offsets,0,sizeof(offsets_t));
 	lib_offsets->constant.kernel_image_base = 0xfffffff007004000;
+#if 0
 #define sym(name) jake_find_symbol(kernel_symbols,name)
 	lib_offsets->funcs.copyin = sym("_copyin");
 	lib_offsets->funcs.copyout = sym("_copyout");
@@ -1368,30 +1369,48 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->funcs.vnode_lookup = sym("_vnode_lookup");
 	lib_offsets->funcs.osunserializexml = sym("__Z16OSUnserializeXMLPKcPP8OSString");
 	lib_offsets->funcs.smalloc = 0xfffffff006b1acb0; // isn't used anymore
+#endif
 
 
 #define N69_11_3
-#if J96_11_3_1
+#ifdef J96_11_3_1
 	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b9328;
 	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070cf2c8;
 	lib_offsets->funcs.ipc_port_make_send = 0xfffffff0070b8aa4;
 #endif
-#if N69_11_3
+#ifdef N69_11_3
+	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
+	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
+	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
+	lib_offsets->funcs.copyin = 0xFFFFFFF0071A7090;
+	lib_offsets->funcs.copyout = 0xFFFFFFF0071A72B4;
+	lib_offsets->funcs.current_task = 0xFFFFFFF0070F76C4;
+	lib_offsets->funcs.get_bsdtask_info = 0xFFFFFFF00710CDC0;
+	lib_offsets->funcs.vm_map_wire_external = 0xFFFFFFF007153484;
+	lib_offsets->funcs.vfs_context_current = 0xFFFFFFF0071F9A04;
+	lib_offsets->funcs.vnode_lookup = 0xFFFFFFF0071DB710;
+	lib_offsets->funcs.osunserializexml = 0xFFFFFFF0074E2404;
+	lib_offsets->gadgets.add_x0_x0_ret = 0xFFFFFFF0073C96A8;
+	lib_offsets->data.realhost = 0xFFFFFFF0075DAB98;
+	lib_offsets->data.zone_map = 0xFFFFFFF0075F7E50;
+	lib_offsets->data.kernel_task = 0xFFFFFFF0075D5048;
+	lib_offsets->data.kern_proc = 0xFFFFFFF0075D50A0;
+#endif
+#ifdef N69_11_4
 	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
 	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
 	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
 #endif
-#if N69_11_4
-	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
-	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
-	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
-#endif
+
+
+#if 0
 	lib_offsets->gadgets.add_x0_x0_ret = sym("_csblob_get_cdhash");
 	lib_offsets->data.realhost = find_realhost(kernel_symbols);
 	lib_offsets->data.zone_map = find_zonemap(kernel_symbols);
 	lib_offsets->data.kernel_task = sym("_kernel_task");
 	lib_offsets->data.kern_proc = sym("_kernproc");
 	lib_offsets->data.rootvnode = sym("_rootvnode");
+#endif
 	lib_offsets->data.osboolean_true = 0xfffffff00764c468; // isn't used anymore
 	lib_offsets->data.trust_cache = 0xfffffff0076b8ee8; // isn't used by stage 3
 	// maybe wrong (we will not include them in the symbol finder for now, if that fails we still have the killswitch and could add version differences later)

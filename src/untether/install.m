@@ -23,7 +23,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     // ldr @ 0x1000670e0
     myoffsets.dns4_array_to_lcconf = -((0x100067c10+0x28-4*8)-0x1000670e0);
 	myoffsets.lcconf_counter_offset = 0x10c;
-    myoffsets.memmove = 0x1809005bc; // XXX (maybe also 0x180077620)
+    myoffsets.memmove = 0x1ab680d20;
     myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp");
     myoffsets.stack_pivot = 0x180b12714;
     myoffsets.mmap = realsym(dyld_cache_path,"__mmap");

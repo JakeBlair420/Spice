@@ -3,6 +3,14 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+// compile with xcrun -sdk iphoneos clang -arch arm64 -shared -fno-stack-protector -fno-stack-check stage3.m -o stage3
+// adhoc sign using jtool: ~/Work/stash/jtool_old_build/jtool --sign adhoc stage3 and then ~/Work/stash/jtool_old_build/jtool --sig out.bin to get the hash
+// !!! out.bin is your signed stage3 binary now not stage3 so copy that one instead of stage3
+// update the hash in stage2 at the top
+// do the same for stage 4
+// you can place stage 4 anywhere on the **root** FS but you have to update the path
+// you also should be able to place stage 3 anywhere where racoons sbx has access to but just do /usr/sbin/racoon.dylib because I for sure know that this works
+
 // a hell lot of type defs are ahead of you because we can't use any functions here
 // this is basically the version of the exploit used in the app (minus the race part obv) just copy pasted into here and then I changed a few things so that it doesn't rely on cache functions
 // so for a more readable version/to understand it please check the version under shared (pwn.m)

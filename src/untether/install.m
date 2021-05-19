@@ -53,7 +53,7 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     myoffsets.stage2_max_size = 0x200000;
     myoffsets.thread_max_size = 0x10000;
     myoffsets.ipr_size = 8;
-    myoffsets.rootdomainUC_vtab = 0xfffffff00708e158; // iometa
+    myoffsets.rootdomainUC_vtab = 0xFFFFFFF00708E148;
     myoffsets.itk_registered = 0x2f0;
     myoffsets.is_task = 0x28;
     myoffsets.copyin = 0xFFFFFFF0071A7090;

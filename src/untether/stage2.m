@@ -1372,7 +1372,7 @@ _STRUCT_ARM_THREAD_STATE64
 #endif
 
 
-#define N69_11_3
+#define N69_11_4
 #ifdef J96_11_3_1
 	lib_offsets->funcs.ipc_port_alloc_special = 0xfffffff0070b9328;
 	lib_offsets->funcs.ipc_kobject_set = 0xfffffff0070cf2c8;
@@ -1400,6 +1400,20 @@ _STRUCT_ARM_THREAD_STATE64
 	lib_offsets->funcs.ipc_port_alloc_special = 0xFFFFFFF0070B915C;
 	lib_offsets->funcs.ipc_kobject_set = 0xFFFFFFF0070CF30C;
 	lib_offsets->funcs.ipc_port_make_send = 0xFFFFFFF0070B88D8;
+    lib_offsets->funcs.copyin = 0xFFFFFFF0071A71CC;
+    lib_offsets->funcs.copyout = 0xFFFFFFF0071A73F0;
+    lib_offsets->funcs.current_task = 0xFFFFFFF0070F4C4C;
+    lib_offsets->funcs.get_bsdtask_info = 0xFFFFFFF00710A348;
+    lib_offsets->funcs.vm_map_wire_external = 0xFFFFFFF007153574;
+    lib_offsets->funcs.vfs_context_current = 0xFFFFFFF0071F9BCC;
+    lib_offsets->funcs.vnode_lookup = 0xFFFFFFF0071DB8D8;
+    lib_offsets->funcs.osunserializexml = 0xFFFFFFF0074E2A58;
+    lib_offsets->gadgets.add_x0_x0_ret = 0xFFFFFFF0073C9C58;
+    lib_offsets->data.realhost = 0xFFFFFFF0075DEB98;
+    lib_offsets->data.zone_map = 0xFFFFFFF0075FBE50;
+    lib_offsets->data.kernel_task = 0xFFFFFFF0075D9048;
+    lib_offsets->data.kern_proc = 0xFFFFFFF0075D90A0;
+
 #endif
 
 
